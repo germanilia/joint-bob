@@ -5,7 +5,8 @@ import { mayReceiveResource } from "../cluster-sharing-policy.js";
 import { projectWorktreeRoot } from "../project-worktrees.js";
 import { replicationPeers } from "../server/replication-v2.js";
 import { ticketWorkspaceRoot } from "../task-workspaces.js";
-import { engineRecordOf, listPhases, phaseOf, projectOwnerNode, saveEngineRecord, setPhase } from "./control.js";
+import { OTHER_TOOL_TEMP } from "./builtin-rules.js";
+import { listPhases, phaseOf, projectOwnerNode, setPhase } from "./control.js";
 import { compileRules, effectiveRules } from "./ignore.js";
 import type { OpArgs, OpName, OpResults, ShareSpec, ShareStatus } from "./protocol.js";
 import { SHARE_KINDS, systemClock, type Clock, type Phase, type ShareKind } from "./types.js";
@@ -52,8 +53,8 @@ export interface AdoptionDeps {
   db: DatabaseSync;
   nodeId: string;
   engine: AdoptionEngine;
-  /** Whether nothing else writes the projects' folders here any more (syncthing-retirement.ts); when it is false, `released` is asked again at the next retry. */
-  released?: () => Promise<boolean>;
+  /** What else still writes the projects' folders here, in plain words; undefined once nothing does. Asked again at each retry. */
+  heldBy?: () => Promise<string | undefined>;
   roots?: (projectId: string) => Record<ShareKind, string> | undefined;
   log?: (key: string, message: string) => void;
   clock?: Clock;
@@ -64,8 +65,6 @@ export interface AdoptionDeps {
 const SCAN_TIMEOUT_MS = 2 * 60 * 60_000;
 const BOOTSTRAP_TIMEOUT_MS = 60 * 60_000;
 const RETRY = { minMs: 5_000, maxMs: 5 * 60_000 };
-/** Half-downloaded files an earlier sync tool left behind. */
-const LEFTOVER_TEMP = /^(?:\.syncthing\..*\.tmp|~syncthing~.*\.tmp)$/s;
 
 function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
@@ -108,7 +107,8 @@ export function projectPeers(db: DatabaseSync, local: string, projectId: string,
   return [...new Set(known)].filter((peer) => peer !== local && receivesIgnoringLease(db, peer, projectId, owner)).sort();
 }
 
-function defaultRoots(db: DatabaseSync, projectId: string): Record<ShareKind, string> | undefined {
+/** The project's three folders on this node; undefined for a project it does not have. */
+export function projectRoots(db: DatabaseSync, projectId: string): Record<ShareKind, string> | undefined {
   const row = db.prepare("SELECT path FROM projects WHERE id = ?").get(projectId) as { path: string } | undefined;
   if (!row) return undefined;
   try { return { project: row.path, tickets: path.join(ticketWorkspaceRoot(), projectId), worktrees: projectWorktreeRoot(projectId) }; } catch { return undefined; }
@@ -130,7 +130,7 @@ export async function removeLeftoverTemps(root: string, ignoredDirectory: (relat
       if (++visited % 500 === 0) await new Promise((resolve) => setImmediate(resolve));
       const child = relative ? `${relative}/${entry.name}` : entry.name;
       if (entry.isDirectory()) { if (!ignoredDirectory(child)) await walk(child); continue; }
-      if (!entry.isFile() || !LEFTOVER_TEMP.test(entry.name)) continue;
+      if (!entry.isFile() || !OTHER_TOOL_TEMP.test(entry.name)) continue;
       try { await rm(path.join(root, child)); removed++; } catch { /* gone already, or not ours to remove */ }
     }
   };
@@ -140,7 +140,7 @@ export async function removeLeftoverTemps(root: string, ignoredDirectory: (relat
 
 function kindLabel(kind: ShareKind): string { return kind === "project" ? "files" : kind === "tickets" ? "ticket folders" : "worktrees"; }
 
-/** The phase as the engine reads it: anything an older release left that is not "builtin" is a take-over still to do. */
+/** The phase as Settings shows it: anything that is not "builtin" is a take-over still to do. */
 export function adoptionPhase(phase: Phase | undefined): "builtin" | "bootstrapping" {
   return phase === "builtin" ? "builtin" : "bootstrapping";
 }
@@ -235,8 +235,9 @@ export class Adoption {
     if (phaseOf(this.db, projectId)?.phase === "builtin") { this.settled(projectId); return; }
     if (!this.roots(projectId) || !projectPeers(this.db, this.local, projectId).length) { this.settled(projectId); return; }
     if (this.waiting(projectId)) return;
-    if (this.deps.released && !(await this.deps.released())) {
-      this.messages.set(projectId, "Waiting for Syncthing on this machine to let go of Joint Bob's folders");
+    const holder = await this.deps.heldBy?.();
+    if (holder) {
+      this.messages.set(projectId, holder);
       this.wait(projectId);
       return;
     }
@@ -286,18 +287,8 @@ export class Adoption {
     }
     if (this.stopped) return "wait";
     this.updatePhase(projectId, "builtin", { builtinSince: since, error: null });
-    this.ownerRecord(projectId);
     await engine.apply();
     return "done";
-  }
-
-  /** Machines on a release that still chose an engine per project follow their owner's record; the owner writes it once. */
-  private ownerRecord(projectId: string): void {
-    if (projectOwnerNode(this.db, projectId) !== this.local) return;
-    const held = engineRecordOf(this.db, projectId);
-    if (held?.mode === "builtin") return;
-    const at = Math.max(this.clock.now(), held ? Date.parse(held.updatedAt) + 1 : 0);
-    saveEngineRecord(this.db, { projectId, mode: "builtin", generation: (held?.generation ?? 0) + 1, updatedAt: new Date(at).toISOString(), origin: this.local });
   }
 
   // ---- what Settings shows ----
@@ -328,7 +319,7 @@ export class Adoption {
   // ---- helpers ----
 
   roots(projectId: string): Record<ShareKind, string> | undefined {
-    return (this.deps.roots ?? ((id: string) => defaultRoots(this.db, id)))(projectId);
+    return (this.deps.roots ?? ((id: string) => projectRoots(this.db, id)))(projectId);
   }
 
   /** Writes only what changed: every write bumps the revision, which derives and kicks again. */

@@ -28,8 +28,8 @@ function setup(t: TestContext, kind: ShareKind = "project"): Setup {
   const worker = createInThreadWorker({ nodeId: NODE, dataDir: path.join(dir, "data"), clock, random: () => (seed = (seed * 16807) % 2147483647) / 2147483647, watch: false });
   t.after(async () => { await worker.stop(); rmSync(dir, { recursive: true, force: true }); });
   const configure = (overrides: Partial<ConfigureArgs> = {}, share: Record<string, unknown> = {}) => worker.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
-    shares: [{ key: `${kind}:p1`, projectId: "p1", kind, root, phase: "syncthing", rules: {}, peers: [], ...share }],
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
+    shares: [{ key: `${kind}:p1`, projectId: "p1", kind, root, phase: "shadow", rules: {}, peers: [], ...share }],
     ...overrides,
   });
   return { dir, root, worker, clock, configure };
@@ -50,7 +50,7 @@ test("configure creates the share, reports ready once and a starting state", asy
   assert.equal(s.worker.events.filter((event) => event.event === "ready").length, 1);
   const state = lastState(s.worker);
   assert.equal(state?.state, "starting");
-  assert.equal(state?.phase, "syncthing");
+  assert.equal(state?.phase, "shadow");
   assert.match(state?.indexId ?? "", /^[A-Za-z0-9_-]{22}$/);
 });
 
@@ -197,9 +197,9 @@ test("at start every watched share gets its walk, a few at a time, and all of th
     const root = path.join(dir, `p${index}`);
     mkdirSync(root);
     for (let file = 0; file < 40; file++) writeFileSync(path.join(root, `f${file}.txt`), `${index}/${file}`);
-    return { key: `project:p${index}`, projectId: `p${index}`, kind: "project" as const, root, phase: "syncthing" as const, rules: {}, peers: [] };
+    return { key: `project:p${index}`, projectId: `p${index}`, kind: "project" as const, root, phase: "shadow" as const, rules: {}, peers: [] };
   });
-  await worker.call("configure", { enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] }, shares });
+  await worker.call("configure", { enabled: true, hostId: "host", peers: [], records: { settings: [] }, shares });
   const deadline = Date.now() + 30_000;
   let statuses: ShareStatus[] = [];
   while (Date.now() < deadline) {

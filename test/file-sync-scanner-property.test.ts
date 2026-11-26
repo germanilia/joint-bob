@@ -60,7 +60,7 @@ function freshGitignores(root: string): GitIgnoredPaths {
 }
 
 /** The independent oracle: what a correct index holds for this tree (in shadow mode unless `phase` says builtin). */
-function expectedIndex(root: string, matcher: IgnoreMatcher, previous: Map<string, LocalEntry>, phase: Phase = "syncthing"): Map<string, Expected> {
+function expectedIndex(root: string, matcher: IgnoreMatcher, previous: Map<string, LocalEntry>, phase: Phase = "shadow"): Map<string, Expected> {
   const expected = new Map<string, Expected>();
   const tree = freshGitignores(root);
   const resurrects = (dir: string, key: string): boolean => {
@@ -269,7 +269,7 @@ class Tree {
 function makeScanner(db: FileSyncDb, share: string, root: string, matcher: IgnoreMatcher, nodeId: string): ShareScanner {
   db.writeTx(() => db.insertShare({ share, projectId: "p", kind: "project", root, indexId: "start" }));
   let generation = 0;
-  const context: ShareContext = { key: share, projectId: "p", kind: "project", root, phase: "syncthing", matcher, peers: [] };
+  const context: ShareContext = { key: share, projectId: "p", kind: "project", root, phase: "shadow", matcher, peers: [] };
   return new ShareScanner({ db, nodeId, clock, emit: () => undefined, slicer: new Slicer(), newIndexId: () => `g${++generation}` }, context);
 }
 

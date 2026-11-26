@@ -13,7 +13,7 @@ import type { Clock } from "../src/file-sync/types.js";
 import { canonicalVector } from "../src/file-sync/vectors.js";
 import { FILES_API } from "../src/file-sync/wire.js";
 
-/* Shadow mode against a stand-in for Syncthing: random file operations on node A's tree are copied
+/* Shadow mode against a stand-in for another sync tool: random file operations on node A's tree are copied
    to the other trees after random delays, out of order, some dropped and repaired later. The engines
    only index and compare. Once everything is copied and quiet, they must agree completely: no
    differences, identical digests, and one version vector per path on every node (identical content
@@ -116,9 +116,9 @@ class Cluster {
 
   configure(node: Node, peers: string[], share: Record<string, unknown> = {}): Promise<unknown> {
     return node.core.call("configure", {
-      enabled: true, hostId: `host-${node.id}`, records: { engines: [], settings: [] },
+      enabled: true, hostId: `host-${node.id}`, records: { settings: [] },
       peers: peers.map((nodeId) => ({ nodeId, publicKey: "unused", origins: [], present: true })),
-      shares: [{ key: SHARE, projectId: "p1", kind: "project", root: node.root, phase: "syncthing", rules: {}, peers, ...share }],
+      shares: [{ key: SHARE, projectId: "p1", kind: "project", root: node.root, phase: "shadow", rules: {}, peers, ...share }],
     } satisfies ConfigureArgs);
   }
 
@@ -153,7 +153,7 @@ class Cluster {
   }
 }
 
-// ---- a tree on disk and the stand-in for Syncthing ----
+// ---- a tree on disk and the stand-in for another sync tool ----
 
 function lstat(file: string): Stats | null {
   try { return lstatSync(file); } catch { return null; }
@@ -174,7 +174,7 @@ function walk(root: string): { files: string[]; dirs: string[]; links: string[] 
   return found;
 }
 
-/** Copies the current state at `relative` from one tree to another, as Syncthing would; returns the paths it changed. */
+/** Copies the current state at `relative` from one tree to another, as another sync tool would; returns the paths it changed. */
 function mirror(source: string, target: string, relative: string, touched = new Set<string>()): Set<string> {
   if (relative) {
     const parts = relative.split("/");
@@ -365,7 +365,7 @@ async function runSeed(seed: number, dir: string): Promise<void> {
       }
       const due = queue.filter((job) => job.due <= step);
       for (const job of due) queue.splice(queue.indexOf(job), 1);
-      // Out of order, as Syncthing pulls by its own priorities.
+      // Out of order, as such a tool pulls by its own priorities.
       due.sort(() => random() - 0.5);
       for (const job of due) {
         const changed = new Set<string>();
@@ -376,7 +376,7 @@ async function runSeed(seed: number, dir: string): Promise<void> {
       await cluster.clock.advance(Math.floor(random() * 600));
       if (random() < 0.3) await Promise.all(cluster.nodes.map((node) => node.core.sync!.idle()));
     }
-    // Syncthing catches up on everything, the dropped copies included.
+    // The other tool catches up on everything, the dropped copies included.
     for (const replica of replicas) {
       const changed = mirror(source.root, replica.root, "");
       await cluster.scan(replica, random() < 0.5 ? "full" : [...changed]);
@@ -412,7 +412,7 @@ async function runSeed(seed: number, dir: string): Promise<void> {
   }
 }
 
-test(`shadow mode converges with a Syncthing stand-in (${ONLY === undefined ? `${SEEDS} seeds` : `seed ${ONLY}`})`, async () => {
+test(`shadow mode converges beside another sync tool's stand-in (${ONLY === undefined ? `${SEEDS} seeds` : `seed ${ONLY}`})`, async () => {
   const seeds = ONLY === undefined ? Array.from({ length: SEEDS }, (_, index) => index + 1) : [ONLY];
   for (const seed of seeds) {
     const dir = mkdtempSync(path.join(os.tmpdir(), "jb-fs-shadow-"));
@@ -492,7 +492,7 @@ test("a folder the peer starts serving later, and a rules change, reach the othe
     for (const node of cluster.nodes) writeFileSync(path.join(node.root, "same.txt"), "same");
     // B runs the engine but does not serve the folder yet: A's shares request finds nothing to compare with.
     await b.core.call("configure", {
-      enabled: true, hostId: "host-node-b", records: { engines: [], settings: [] }, peers: [{ nodeId: a.id, publicKey: "unused", origins: [], present: true }], shares: [],
+      enabled: true, hostId: "host-node-b", records: { settings: [] }, peers: [{ nodeId: a.id, publicKey: "unused", origins: [], present: true }], shares: [],
     });
     await cluster.configure(a, [b.id]);
     await cluster.scan(a, "full");
@@ -573,7 +573,7 @@ test("rows dropped by a new rule leave peers' copies too, so lifting the rule le
       for (const node of cluster.nodes) { await cluster.configure(node, [other(node)], { rules: { userRules: ["*.skip"] } }); await cluster.scan(node, "full"); }
       await cluster.quiesce();
       for (const node of cluster.nodes) assert.equal(node.core.db.remote(SHARE, other(node), "gone.skip"), undefined, `${goneOn}: ${node.id} holds no row the peer dropped`);
-      // The file goes while ignored (Syncthing does not copy that either), then the rule is lifted.
+      // The file goes while ignored (the other tool does not copy that either), then the rule is lifted.
       for (const node of goneOn === "both" ? cluster.nodes : [a]) unlinkSync(path.join(node.root, "gone.skip"));
       for (const node of cluster.nodes) { await cluster.configure(node, [other(node)], { rules: {} }); await cluster.scan(node, "full"); }
       await cluster.quiesce();
@@ -601,7 +601,7 @@ test("identical deletions merge even while a third, winning version exists, so t
     for (const node of cluster.nodes) { writeFileSync(path.join(node.root, "f.txt"), "x"); writeFileSync(path.join(node.root, "keep.txt"), "k"); }
     await cluster.start();
     await cluster.quiesce();
-    // C edits f before Syncthing copies anything; B deletes it, and Syncthing removes it on A.
+    // C edits f before the other tool copies anything; B deletes it, and that tool removes it on A.
     writeFileSync(path.join(c.root, "f.txt"), "y"); await cluster.scan(c, ["f.txt"]);
     await cluster.quiesce();
     unlinkSync(path.join(b.root, "f.txt")); await cluster.scan(b, ["f.txt"]);

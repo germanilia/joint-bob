@@ -733,7 +733,7 @@ export class ShareScanner {
           continue;
         }
         if (this.options.fsNames && dirent.name !== nfc && this.ctx.phase === "builtin") {
-          // Syncthing's autoNormalize: builtin mode renames a lone non-NFC name to its key.
+          // Builtin mode renames a lone non-NFC name to its key.
           const renamed = joinKey(dir.fs, nfc);
           try { renameSync(this.abs(childFs), this.abs(renamed)); childFs = renamed; } catch { /* keeps the fs_name mapping */ }
         }
@@ -797,7 +797,7 @@ export class ShareScanner {
       return row.ino !== st.ino || regone ? 2 : changed ? 3 : 1;
     }
     // In builtin mode a deleted folder that came back holding only ignored files stays deleted (apply cleared it for a
-    // peer and could not remove local-only content). In shadow mode Syncthing copies such a folder empty, so a folder
+    // peer and could not remove local-only content). In shadow mode this engine cleared nothing, so a folder
     // on disk is live whatever it holds; otherwise two nodes with the same tree would index it differently for good.
     if (row && row.deleted && row.type === DIRECTORY && this.ctx.phase === "builtin" && !this.resurrects(key, fsName ?? key)) return 0;
     this.queue(run, {

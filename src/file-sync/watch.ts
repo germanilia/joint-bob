@@ -306,8 +306,8 @@ export class ShareWatcher {
 
   /**
    * Stop watching, drop what is pending, and come back with a full scan: after a burst at the fixed burstResumeMs (a
-   * bulk change is no failure, and an escalating wait left 10,000 new files unscanned for minutes; Syncthing waits
-   * 10 s), after a watcher failure with a backoff that grows while failures repeat.
+   * bulk change is no failure, and an escalating wait left 10,000 new files unscanned for minutes), after a watcher
+   * failure with a backoff that grows while failures repeat.
    */
   degrade(message: string, options: { burst?: boolean } = {}): void {
     if (this.closed || this.stateValue === "degraded") return;

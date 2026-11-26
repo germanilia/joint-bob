@@ -1,13 +1,13 @@
 import type { KeyObject } from "node:crypto";
 import { z } from "zod";
-import type { EngineMode, EngineRecord, IndexEntry, Phase, SettingsRecord, ShareKind, ShareState } from "./types.js";
+import type { IndexEntry, Phase, SettingsRecord, ShareKind, ShareState } from "./types.js";
 
 /* Messages between the main thread (control plane) and the worker core (data plane). The worker is the
    only writer of file-sync.db; main owns everything durable (node.db) and pushes the desired state with
    `configure`. Every op and event is defined here first so both halves are built against one contract. */
 
 const shareKind = z.enum(["project", "tickets", "worktrees"]);
-const phase = z.enum(["syncthing", "releasing", "bootstrapping", "builtin", "restoring"]);
+const phase = z.enum(["shadow", "bootstrapping", "builtin"]);
 const ruleSettings = z.object({
   disabledBuiltins: z.array(z.string()).default([]),
   userRules: z.array(z.string()).default([]),
@@ -41,7 +41,6 @@ export const peerSpecSchema = z.object({
 });
 export type PeerSpec = z.infer<typeof peerSpecSchema>;
 
-const engineRecord = z.object({ projectId: z.string(), mode: z.enum(["syncthing", "builtin"]), generation: z.number().int(), updatedAt: z.string(), origin: z.string() });
 const settingsRecord = z.object({ key: z.string(), value: ruleSettings, updatedAt: z.string(), origin: z.string() });
 
 export const configureSchema = z.object({
@@ -53,7 +52,7 @@ export const configureSchema = z.object({
   shares: z.array(shareSpecSchema),
   peers: z.array(peerSpecSchema),
   /** Records this node serves to peers in /files/shares answers. */
-  records: z.object({ engines: z.array(engineRecord), settings: z.array(settingsRecord) }),
+  records: z.object({ settings: z.array(settingsRecord) }),
   /** Shares whose index state goes for good (project removed, policy deleted, §4). A share merely absent from `shares` keeps its rows. */
   dropShares: z.array(z.string()).optional(),
   /** Multi-user mode on Linux: apply never lowers a file's group bits (shared group access, §1 Permissions). */
@@ -93,7 +92,7 @@ export interface PeerShareStatus {
   route: "direct" | "relay" | "none";
   /** Received from this peer for the share since the worker started (builtin transfers): bytes by route, files applied. */
   transfer?: { directBytes: number; relayBytes: number; files: number };
-  /** cutover-engine (P5): the peer's announced builtin_since (null: not on built-in sync there, or not heard). */
+  /** The peer's announced builtin_since (null: not on built-in sync there, or not heard). */
   builtinSince?: number | null;
 }
 
@@ -116,10 +115,8 @@ export interface ShareStatus {
   watch: string;
   message?: string;
   peers: PeerShareStatus[];
-  /** cutover-engine (P5): this node's maxSeq when its switch bootstrapped the share; null outside a switch. */
+  /** This node's maxSeq when its take-over bootstrapped the share; null before it. */
   builtinSince?: number | null;
-  /** cutover-engine (P5): the project's engine as its owner recorded it (main fills it in; the phase above is this node's progress). */
-  engine?: EngineMode;
   /** auto-transition: a full scan of the current generation finished (the first index is done). */
   indexed?: boolean;
 }
@@ -255,7 +252,7 @@ export type CoreEvent =
   | { event: "ready"; origins: string[] }
   | { event: "shareState"; status: ShareStatus }
   | { event: "shareRemoved"; share: string }
-  | { event: "records"; fromPeer: string; engines: EngineRecord[]; settings: SettingsRecord[] }
+  | { event: "records"; fromPeer: string; settings: SettingsRecord[] }
   | { event: "capability"; peer: string; protocol: number; enabled: boolean; origins: string[]; hostId?: string }
   | { event: "log"; level: "info" | "warn" | "error"; key: string; message: string }
   | { event: "settled"; key: string }
@@ -305,7 +302,9 @@ export type ServeControl = { serveAck: number; bytes: number } | { serveCancel: 
 
 /** Version of the wire protocol between engines. Additive changes keep it; a required new behavior bumps it. */
 export const FILE_SYNC_PROTOCOL = 2;
-/** Older engines still compare in shadow mode: protocol 1 (2.157, 2.158) has the engine but not the switch. */
+/** Older engines still compare in shadow mode: protocol 1 (2.157, 2.158) indexes and compares, and never writes. */
 export const FILE_SYNC_MIN_PROTOCOL = 1;
-/** cutover-engine (P5): a peer below this never leaves Syncthing for a switched project, so a project it shares stays on Syncthing (or moves back). */
+/** A peer below this never takes a project over, so it receives no files. */
 export const FILE_SYNC_SWITCH_PROTOCOL = 2;
+/** Releases before 2.341.0 refuse a /files/shares answer without an `engines` list (a sync engine was chosen per project then): every answer carries an empty one until no peer runs them. */
+export const LEGACY_SHARES_FIELDS: { engines: never[] } = { engines: [] };

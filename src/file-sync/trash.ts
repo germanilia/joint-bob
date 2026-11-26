@@ -21,7 +21,7 @@ const LOW_WATER = 0.9;
 
 export interface DiskInfo { freeBytes: number; totalBytes: number }
 
-/** The free space a filesystem keeps: Syncthing's minDiskFree parity. */
+/** The free space a filesystem keeps: 1 % of its size, and never less than 2 GiB. */
 export function applyFloorBytes(totalBytes: number): number {
   return Math.max(2 * GiB, Math.ceil(totalBytes * 0.01));
 }

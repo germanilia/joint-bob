@@ -8,7 +8,7 @@ import { digestOf } from "../src/file-sync/digest.js";
 import { compileRules, effectiveRules } from "../src/file-sync/ignore.js";
 import { FILE_SYNC_MIN_PROTOCOL, FILE_SYNC_PROTOCOL, type ConfigureArgs, type CoreEvent, type FilesEndpoint, type ServeAnswer } from "../src/file-sync/protocol.js";
 import { PeerLimiter } from "../src/file-sync/sync.js";
-import type { Clock, EngineRecord, SettingsRecord } from "../src/file-sync/types.js";
+import type { Clock, SettingsRecord } from "../src/file-sync/types.js";
 import { decodeIndexPage, FILES_API, INDEX_CONTENT_TYPE, NOT_SHARED_ERROR, sharesAnswerSchema, statusAnswerSchema } from "../src/file-sync/wire.js";
 
 const SHARE = "project:p1";
@@ -105,9 +105,9 @@ function setup(t: TestContext) {
     const result: Node = {
       id, root, core, events,
       configure: (overrides = {}, share = {}) => core.call("configure", {
-        enabled: true, hostId: options.hostId ?? `host-${id}`, records: { engines: [], settings: [] },
+        enabled: true, hostId: options.hostId ?? `host-${id}`, records: { settings: [] },
         peers: peers.map((nodeId) => ({ nodeId, publicKey: "unused", origins: [], present: options.present ?? true })),
-        shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: "syncthing", rules: {}, peers, ...share }],
+        shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: "shadow", rules: {}, peers, ...share }],
         ...overrides,
       }),
       scan: () => core.call("scan", { share: SHARE, scope: "full", reason: "test" }),
@@ -200,10 +200,6 @@ test("the shares answer describes each share and carries only records about the 
   const p2 = path.join(s.dir, "p2");
   mkdirSync(p2);
   const at = "2026-10-25T10:00:00.000Z";
-  const engines: EngineRecord[] = [
-    { projectId: "p1", mode: "syncthing", generation: 1, updatedAt: at, origin: "node-a" },
-    { projectId: "p2", mode: "syncthing", generation: 1, updatedAt: at, origin: "node-a" },
-  ];
   const rules = { disabledBuiltins: [], userRules: ["*.log"], removedUserRules: [], gitignore: false, importedFrom: [] };
   const settings: SettingsRecord[] = [
     { key: "project:p1", value: rules, updatedAt: at, origin: "node-a" },
@@ -212,17 +208,20 @@ test("the shares answer describes each share and carries only records about the 
     { key: "global:node-c", value: rules, updatedAt: at, origin: "node-c" },
   ];
   await a.configure({
-    records: { engines, settings },
+    records: { settings },
     peers: [{ nodeId: "node-b", publicKey: "x", origins: [], present: false }, { nodeId: "node-c", publicKey: "x", origins: [], present: false }],
     shares: [
-      { key: SHARE, projectId: "p1", kind: "project", root: a.root, phase: "syncthing", rules: {}, peers: ["node-b"] },
-      { key: "project:p2", projectId: "p2", kind: "project", root: p2, phase: "syncthing", rules: {}, peers: ["node-c"] },
+      { key: SHARE, projectId: "p1", kind: "project", root: a.root, phase: "shadow", rules: {}, peers: ["node-b"] },
+      { key: "project:p2", projectId: "p2", kind: "project", root: p2, phase: "shadow", rules: {}, peers: ["node-c"] },
     ],
   });
   files(a.root, { "one.txt": "1", "two.txt": "2" });
   await a.scan();
   const row = a.core.db.share(SHARE)!;
-  const answer = sharesAnswerSchema.parse(await json(await serve(a, "node-b", "shares")));
+  const sent = await json(await serve(a, "node-b", "shares")) as { engines?: unknown };
+  // Releases before 2.341.0 refuse an answer without this list; it is always empty now.
+  assert.deepEqual(sent.engines, []);
+  const answer = sharesAnswerSchema.parse(sent);
   assert.deepEqual(answer.fileSync, { protocol: FILE_SYNC_PROTOCOL, minProtocol: FILE_SYNC_MIN_PROTOCOL, enabled: true });
   assert.equal(answer.nodeId, "node-a");
   assert.equal(answer.hostId, "host-node-a");
@@ -230,11 +229,9 @@ test("the shares answer describes each share and carries only records about the 
     projectId: "p1", kind: "project", indexId: row.indexId, maxSeq: 2, digest: row.digest, rulesHash: compileRules(effectiveRules("project", {})).hash,
     state: "idle", builtinSince: null, prunedBelow: 0, rootDev: row.rootDev, rootIno: row.rootIno,
   }]);
-  assert.deepEqual(answer.engines.map((record) => record.projectId), ["p1"]);
   assert.deepEqual(answer.settings.map((record) => record.key), ["project:p1", "global:node-a"], "another node's all-projects rules are never relayed");
   const toC = sharesAnswerSchema.parse(await json(await serve(a, "node-c", "shares")));
   assert.deepEqual(toC.shares.map((share) => share.projectId), ["p2"]);
-  assert.deepEqual(toC.engines.map((record) => record.projectId), ["p2"]);
   assert.deepEqual(toC.settings.map((record) => record.key), ["project:p2", "global:node-a"]);
 });
 
@@ -246,7 +243,6 @@ test("a shares answer marks the peer capable and its records go to main with the
   const b = s.node("node-b", ["node-a"]);
   await a.configure({
     records: {
-      engines: [{ projectId: "p1", mode: "syncthing", generation: 2, updatedAt: at, origin: "node-a" }],
       settings: [{ key: "project:p1", value: rules, updatedAt: at, origin: "node-a" }, { key: "global:node-c", value: rules, updatedAt: at, origin: "node-c" }],
     },
   });
@@ -255,7 +251,6 @@ test("a shares answer marks the peer capable and its records go to main with the
   const records = b.events.filter((event) => event.event === "records");
   assert.deepEqual(records, [{
     event: "records", fromPeer: "node-a",
-    engines: [{ projectId: "p1", mode: "syncthing", generation: 2, updatedAt: at, origin: "node-a" }],
     settings: [{ key: "project:p1", value: rules, updatedAt: at, origin: "node-a" }],
   }], "once, from the node that answered, without records about other nodes");
   assert.deepEqual(b.events.filter((event) => event.event === "capability"), [{ event: "capability", peer: "node-a", protocol: FILE_SYNC_PROTOCOL, enabled: true, origins: [], hostId: "host-node-a" }]);
@@ -619,9 +614,9 @@ test("records in a direct answer count only as the same answer fetched again thr
   const s = setup(t);
   const at = "2026-10-25T10:00:00.000Z";
   const rules = { disabledBuiltins: [], userRules: [], removedUserRules: [], gitignore: false, importedFrom: [] };
-  const genuine: EngineRecord = { projectId: "p1", mode: "syncthing", generation: 1, updatedAt: at, origin: "node-a" };
+  const genuine: SettingsRecord = { key: "project:p1", value: rules, updatedAt: at, origin: "node-a" };
   const a = s.node("node-a", ["node-b"]);
-  await a.configure({ records: { engines: [genuine], settings: [] } });
+  await a.configure({ records: { settings: [genuine] } });
   const net = s.net.transport("node-b");
   const relayed: string[] = [];
   const b = s.node("node-b", ["node-a"], {
@@ -633,8 +628,7 @@ test("records in a direct answer count only as the same answer fetched again thr
         if (request.purpose !== "shares") return { ...response, route: "direct" };
         // Something else holds A's direct address and answers as A: same node id, forged records.
         const answer = JSON.parse((await bytes(response as unknown as ServeAnswer)).toString("utf8"));
-        answer.engines = [{ ...genuine, mode: "builtin", generation: 99 }];
-        answer.settings = [{ key: "project:p1", value: { ...rules, userRules: ["*"] }, updatedAt: at, origin: "node-a" }];
+        answer.settings = [{ ...genuine, value: { ...rules, userRules: ["*"] } }];
         return { status: 200, headers: {}, body: once(Buffer.from(JSON.stringify(answer))), route: "direct" };
       },
     },
@@ -642,7 +636,7 @@ test("records in a direct answer count only as the same answer fetched again thr
   await b.configure();
   await s.quiesce();
   assert.deepEqual(relayed, ["/api/cluster/v2/files/shares"]);
-  assert.deepEqual(b.events.filter((event) => event.event === "records"), [{ event: "records", fromPeer: "node-a", engines: [genuine], settings: [] }]);
+  assert.deepEqual(b.events.filter((event) => event.event === "records"), [{ event: "records", fromPeer: "node-a", settings: [genuine] }]);
 });
 
 test("triggers while a contact is in flight fold into it: one shares request and one notice", async (t) => {

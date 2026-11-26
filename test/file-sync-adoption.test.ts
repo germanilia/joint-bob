@@ -11,7 +11,7 @@ import { ensurePeerEndpointSchema, recordPeerEndpoint } from "../src/cluster-pee
 import { ensureResourceSharingSchema } from "../src/cluster-sharing.js";
 import { addSharingMember, createSharingCluster, getSharingCluster, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
 import { Adoption, adoptionPhase, projectDifferences, projectPeers, removeLeftoverTemps, type AdoptionDeps, type AdoptionEngine } from "../src/file-sync/adoption.js";
-import { engineRecordOf, ensureControlSchema, listEngineRecords, phaseOf, saveEngineRecord, setPhase } from "../src/file-sync/control.js";
+import { ensureControlSchema, phaseOf, setPhase } from "../src/file-sync/control.js";
 import { FirstIndexQueue } from "../src/file-sync/first-index.js";
 import type { OpArgs, OpName, ShareSpec, ShareStatus } from "../src/file-sync/protocol.js";
 import { EMPTY_RULE_SETTINGS, SHARE_KINDS, type Clock, type Phase, type ShareKind } from "../src/file-sync/types.js";
@@ -27,7 +27,7 @@ const NOW = "2026-10-25T00:00:00.000Z";
 const HASH = "a".repeat(64);
 const PROJECT = "alpha";
 const SHARES = SHARE_KINDS.map((kind) => `${kind}:${PROJECT}`);
-const RELEASE_MESSAGE = "Waiting for Syncthing on this machine to let go of Joint Bob's folders";
+const RELEASE_MESSAGE = "Waiting for another sync tool on this machine to let go of Joint Bob's folders";
 
 class FakeClock implements Clock {
   at = Date.parse(NOW);
@@ -91,7 +91,7 @@ class FakeEngine {
 
   constructor(private readonly fixture: () => Fixture) {}
 
-  private phase(projectId = PROJECT): Phase { return phaseOf(this.fixture().db, projectId)?.phase ?? "syncthing"; }
+  private phase(projectId = PROJECT): Phase { return phaseOf(this.fixture().db, projectId)?.phase ?? "shadow"; }
 
   api(): AdoptionEngine {
     return {
@@ -269,15 +269,14 @@ test("a project shared with nobody is left alone: no phase, nothing asked of the
     assert.deepEqual([f.engine.calls, f.engine.applied, machine.pendingTimers(), f.clock.live()], [[], [], [], 0]);
     assert.deepEqual(projectPeers(f.db, LOCAL, "solo"), []);
     assert.deepEqual(projectPeers(f.db, LOCAL, PROJECT), [PEER]);
-    assert.deepEqual(listEngineRecords(f.db), []);
   } finally { await f.cleanup(); }
 });
 
-test("while released() says no the project waits untouched with the reason and one retry timer, and goes on when it says yes", async () => {
+test("while heldBy() names something the project waits untouched with that reason and one retry timer, and goes on when it names nothing", async () => {
   const f = await fixture();
   try {
     let released = false, asked = 0;
-    const machine = f.machine({ released: async () => { asked++; return released; } });
+    const machine = f.machine({ heldBy: async () => { asked++; return released ? undefined : RELEASE_MESSAGE; } });
     machine.kick();
     await machine.idle();
     assert.equal(phaseOf(f.db, PROJECT), undefined, "nothing is written while something else may still write the folders");
@@ -309,7 +308,7 @@ test("the retry delay doubles up to its cap", async () => {
   const f = await fixture();
   try {
     let asked = 0;
-    const machine = f.machine({ released: async () => { asked++; return false; } });
+    const machine = f.machine({ heldBy: async () => { asked++; return RELEASE_MESSAGE; } });
     machine.kick();
     await machine.idle();
     const delays: number[] = [];
@@ -430,25 +429,26 @@ test("a step that fails is logged with the project's name and tried again later"
   } finally { await f.cleanup(); }
 });
 
-test("a phase an older release left (syncthing, releasing, restoring) is taken over the same way, from the start", async () => {
-  for (const phase of ["syncthing", "releasing", "restoring"] as const) {
-    const f = await fixture();
-    try {
-      // What the older release recorded for another engine's time is not kept: every folder is decided again.
-      setPhase(f.db, PROJECT, phase, { builtinSince: { project: 3, tickets: 3, worktrees: 3 }, error: "Syncthing did not answer" });
-      const machine = f.machine();
-      assert.deepEqual([machine.project(PROJECT).phase, adoptionPhase(phase)], ["bootstrapping", "bootstrapping"], phase);
-      machine.kick();
-      await machine.idle();
-      const held = phaseOf(f.db, PROJECT)!;
-      assert.deepEqual([held.phase, held.builtinSince, held.error], ["builtin", TAKEN, null], phase);
-      assert.deepEqual(f.engine.ops("scan"), SHARES, phase);
-      assert.deepEqual(f.engine.ops("bootstrap"), SHARES, phase);
-      assert.deepEqual([...new Set(f.engine.applied)], ["bootstrapping", "builtin"], phase);
-    } finally { await f.cleanup(); }
-  }
+test("a project put back to shadow is taken over again from the start, and Settings shows anything but builtin as a take-over to do", async () => {
+  const f = await fixture();
+  try {
+    // Recorded as taken over, then put back: what was recorded before is gone with the row, and every folder is decided again.
+    setPhase(f.db, PROJECT, "builtin", { builtinSince: { project: 3, tickets: 3, worktrees: 3 } });
+    setPhase(f.db, PROJECT, "shadow");
+    assert.equal(phaseOf(f.db, PROJECT), undefined, "shadow is no row at all");
+    const machine = f.machine();
+    assert.equal(machine.project(PROJECT).phase, "bootstrapping");
+    machine.kick();
+    await machine.idle();
+    const held = phaseOf(f.db, PROJECT)!;
+    assert.deepEqual([held.phase, held.builtinSince, held.error], ["builtin", TAKEN, null]);
+    assert.deepEqual(f.engine.ops("scan"), SHARES);
+    assert.deepEqual(f.engine.ops("bootstrap"), SHARES);
+    assert.deepEqual([...new Set(f.engine.applied)], ["bootstrapping", "builtin"]);
+  } finally { await f.cleanup(); }
   assert.equal(adoptionPhase("builtin"), "builtin");
   assert.equal(adoptionPhase(undefined), "bootstrapping");
+  assert.equal(adoptionPhase("shadow"), "bootstrapping");
   assert.equal(adoptionPhase("bootstrapping"), "bootstrapping");
 });
 
@@ -486,41 +486,14 @@ test("a node that stops at any step resumes there after a restart and finishes, 
   }
 });
 
-test("the owner writes one builtin engine record for machines on older releases; a machine that does not own the project writes none", async () => {
-  const owner = await fixture();
-  try {
-    const machine = owner.machine();
-    machine.kick();
-    await machine.idle();
-    assert.deepEqual(listEngineRecords(owner.db), [{ projectId: PROJECT, mode: "builtin", generation: 1, updatedAt: NOW, origin: LOCAL }]);
-    // Asked again (a restart, a new peer): the record stands as written.
-    owner.clock.advance(60_000);
-    const again = owner.machine();
-    again.kick();
-    again.kick(PROJECT);
-    await again.idle();
-    assert.deepEqual(listEngineRecords(owner.db), [{ projectId: PROJECT, mode: "builtin", generation: 1, updatedAt: NOW, origin: LOCAL }]);
-  } finally { await owner.cleanup(); }
-
-  // The older release's owner had moved it back: the new record is one generation on and newer, so every machine takes it.
-  const moved = await fixture();
-  try {
-    const later = new Date(Date.parse(NOW) + 3_600_000).toISOString();
-    saveEngineRecord(moved.db, { projectId: PROJECT, mode: "syncthing", generation: 3, updatedAt: later, origin: LOCAL });
-    const machine = moved.machine();
-    machine.kick();
-    await machine.idle();
-    assert.deepEqual(engineRecordOf(moved.db, PROJECT), { projectId: PROJECT, mode: "builtin", generation: 4, updatedAt: new Date(Date.parse(later) + 1).toISOString(), origin: LOCAL });
-  } finally { await moved.cleanup(); }
-
+test("a machine that does not own the project takes it over all the same", async () => {
   const peer = await fixture({ owner: PEER });
   try {
     const machine = peer.machine();
     assert.equal(machine.project(PROJECT).owner, false);
     machine.kick();
     await machine.idle();
-    assert.deepEqual([phaseOf(peer.db, PROJECT)!.phase, phaseOf(peer.db, PROJECT)!.builtinSince], ["builtin", TAKEN], "it takes the project over all the same");
-    assert.deepEqual(listEngineRecords(peer.db), []);
+    assert.deepEqual([phaseOf(peer.db, PROJECT)!.phase, phaseOf(peer.db, PROJECT)!.builtinSince], ["builtin", TAKEN]);
   } finally { await peer.cleanup(); }
 });
 
@@ -528,9 +501,9 @@ test("the listing shows every shared project with its phase, what it waits for a
   const f = await fixture();
   try {
     addUnshared(f.db, path.join(f.dir, "solo"));
-    f.engine.tweak.project = { peers: [{ ...status("project", "syncthing").peers[0], differences: 2 }] };
-    f.engine.tweak.worktrees = { peers: [{ ...status("worktrees", "syncthing").peers[0], differences: 1 }] };
-    const machine = f.machine({ released: async () => false });
+    f.engine.tweak.project = { peers: [{ ...status("project", "shadow").peers[0], differences: 2 }] };
+    f.engine.tweak.worktrees = { peers: [{ ...status("worktrees", "shadow").peers[0], differences: 1 }] };
+    const machine = f.machine({ heldBy: async () => RELEASE_MESSAGE });
     const before = { projectId: PROJECT, name: "Project alpha", owner: true, phase: "bootstrapping", phaseMessage: null, phaseError: null, differences: 3, shares: ["project", "tickets", "worktrees"], waiting: false };
     assert.deepEqual(machine.projects(), [before], "the project shared with nobody is not listed");
     machine.kick();
@@ -560,7 +533,7 @@ test("stop() cancels the retry timers, and a stopped machine starts nothing", as
   const f = await fixture();
   try {
     let asked = 0;
-    const machine = f.machine({ released: async () => { asked++; return false; } });
+    const machine = f.machine({ heldBy: async () => { asked++; return RELEASE_MESSAGE; } });
     machine.kick();
     await machine.idle();
     assert.deepEqual([machine.pendingTimers(), f.clock.live()], [[PROJECT], 1]);
@@ -578,15 +551,15 @@ test("stop() cancels the retry timers, and a stopped machine starts nothing", as
 test("a kick that arrives while a step runs is not lost: the step runs once more when it ends", async () => {
   const f = await fixture();
   try {
-    let release!: (value: boolean) => void;
+    let release!: (value: string | undefined) => void;
     let asked = 0;
-    const machine = f.machine({ released: () => { asked++; return asked === 1 ? new Promise<boolean>((resolve) => { release = resolve; }) : Promise.resolve(true); } });
+    const machine = f.machine({ heldBy: () => { asked++; return asked === 1 ? new Promise<string | undefined>((resolve) => { release = resolve; }) : Promise.resolve(undefined); } });
     machine.kick();
     machine.kick();
     machine.kick(PROJECT);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(asked, 1, "one step per project at a time");
-    release(true);
+    release(undefined);
     await machine.idle();
     assert.equal(phaseOf(f.db, PROJECT)!.phase, "builtin");
     assert.deepEqual(f.engine.ops("bootstrap"), SHARES);
@@ -692,7 +665,7 @@ test("the worker reports builtin_since for the take-over, its own and each peer'
   t.after(async () => { await core.close(); await rm(dir, { recursive: true, force: true }); });
   const key = "project:p1";
   const configure = (phase: Phase) => core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key, projectId: "p1", kind: "project", root, phase, rules: { ...EMPTY_RULE_SETTINGS }, peers: ["node-b"] }],
   });
   await configure("bootstrapping");
@@ -710,7 +683,7 @@ test("the worker reports builtin_since for the take-over, its own and each peer'
   assert.equal((await core.call("status", { shares: [key] }))[0].builtinSince, after.maxSeq, "kept once the project is builtin");
 });
 
-test("the first index of every shared project runs one at a time, smallest first, and waits while main is busy", () => {
+test("the first index of every shared project runs one at a time, by name, and waits while main is busy", () => {
   const clock = new FakeClock();
   const indexed = new Set<string>(["known"]);
   let changed = 0;
@@ -719,28 +692,26 @@ test("the first index of every shared project runs one at a time, smallest first
     indexed: () => indexed, markIndexed: (id) => { indexed.add(id); }, changed: () => { changed++; },
     name: (id) => `Project ${id}`, clock, calmWindowMs: 2_000, loopUtilization: () => () => busy ? 0.95 : 0.1,
   });
-  const spec = (projectId: string, kind: ShareKind): ShareSpec => ({ key: `${kind}:${projectId}`, projectId, kind, root: `/r/${projectId}/${kind}`, phase: "syncthing", rules: { ...EMPTY_RULE_SETTINGS }, peers: [PEER] });
+  const spec = (projectId: string, kind: ShareKind): ShareSpec => ({ key: `${kind}:${projectId}`, projectId, kind, root: `/r/${projectId}/${kind}`, phase: "shadow", rules: { ...EMPTY_RULE_SETTINGS }, peers: [PEER] });
   const all = ["alpha", "beta", "gamma", "known", "taken"].flatMap((id) => SHARE_KINDS.map((kind) => spec(id, kind)));
   // A project already being taken over (it has a phase here) is wanted at once.
   const always = (id: string) => id === "taken";
-  // beta and gamma have a known file count; alpha's is unknown, so it goes last.
-  queue.setCounts(new Map([["beta", 900], ["gamma", 12]]));
   const projectsOf = (shares: ShareSpec[]) => [...new Set(shares.map((share) => share.projectId))].sort();
   let admitted = queue.admit(all, always);
-  assert.deepEqual(projectsOf(admitted), ["gamma", "known", "taken"], "indexed and taken-over projects at once, one new project");
-  assert.deepEqual(queue.status(), { projectId: "gamma", name: "Project gamma", position: 2, total: 5 });
+  assert.deepEqual(projectsOf(admitted), ["alpha", "known", "taken"], "indexed and taken-over projects at once, one new project");
+  assert.deepEqual(queue.status(), { projectId: "alpha", name: "Project alpha", position: 2, total: 5 });
   const reports = new Map<string, ShareStatus>();
   const report = (projectId: string, kind: ShareKind, overrides: Partial<ShareStatus>) => {
-    const value = { ...status(kind, "syncthing"), share: `${kind}:${projectId}`, projectId, ...overrides };
+    const value = { ...status(kind, "shadow"), share: `${kind}:${projectId}`, projectId, ...overrides };
     reports.set(value.share, value);
     queue.reported(value, (key) => reports.get(key));
   };
-  report("gamma", "project", { indexed: true });
-  report("gamma", "tickets", { indexed: false, state: "scanning", scanning: true });
-  report("gamma", "worktrees", { state: "unavailable" });
-  assert.equal(indexed.has("gamma"), false, "one folder still scanning");
-  report("gamma", "tickets", { indexed: true });
-  assert.equal(indexed.has("gamma"), true);
+  report("alpha", "project", { indexed: true });
+  report("alpha", "tickets", { indexed: false, state: "scanning", scanning: true });
+  report("alpha", "worktrees", { state: "unavailable" });
+  assert.equal(indexed.has("alpha"), false, "one folder still scanning");
+  report("alpha", "tickets", { indexed: true });
+  assert.equal(indexed.has("alpha"), true);
   assert.equal(changed, 0, "the next waits for main to be calm");
   clock.advance(2_000);
   assert.equal(changed, 0, "a busy window waits for another");
@@ -748,7 +719,7 @@ test("the first index of every shared project runs one at a time, smallest first
   clock.advance(2_000);
   assert.equal(changed, 1);
   admitted = queue.admit(all, always);
-  assert.deepEqual(projectsOf(admitted), ["beta", "gamma", "known", "taken"]);
+  assert.deepEqual(projectsOf(admitted), ["alpha", "beta", "known", "taken"]);
   assert.deepEqual(queue.status(), { projectId: "beta", name: "Project beta", position: 3, total: 5 });
   // A project that is no longer shared leaves the queue; the next goes in.
   admitted = queue.admit(all.filter((share) => share.projectId !== "beta"), always);
@@ -757,10 +728,10 @@ test("the first index of every shared project runs one at a time, smallest first
   // A file rewritten every second keeps a folder scanning: its first index is done all the same, and a main thread
   // that stays busy lets the next project go after a few windows instead of holding the queue for good.
   busy = true;
-  report("alpha", "project", { indexed: true, state: "scanning", scanning: true });
-  report("alpha", "tickets", { indexed: true, state: "scanning", scanning: true });
-  report("alpha", "worktrees", { indexed: true });
-  assert.equal(indexed.has("alpha"), true, "indexed while still scanning");
+  report("gamma", "project", { indexed: true, state: "scanning", scanning: true });
+  report("gamma", "tickets", { indexed: true, state: "scanning", scanning: true });
+  report("gamma", "worktrees", { indexed: true });
+  assert.equal(indexed.has("gamma"), true, "indexed while still scanning");
   const before = changed;
   for (let window = 0; window < 4; window++) clock.advance(2_000);
   assert.equal(changed, before, "four busy windows wait");

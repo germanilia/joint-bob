@@ -1099,7 +1099,7 @@ export class Harness {
     // Revoked: the share lists no peer (the cluster still does; they just do not share this folder now).
     const sharing = peers.filter((peer) => !node.unshared?.has(peer));
     await node.core.call("configure", {
-      enabled: true, hostId: `host-${node.id}`, records: { engines: [], settings: [] },
+      enabled: true, hostId: `host-${node.id}`, records: { settings: [] },
       peers: peers.map((nodeId) => ({ nodeId, publicKey: "unused", origins: [], present: true })),
       shares: node.shared ? [{ key: SHARE, projectId: PROJECT_ID, kind: "project", root: node.root, phase: node.phase, rules: node.rules, peers: sharing }] : [],
       ...(drop ? { dropShares: [SHARE] } : {}),
@@ -1710,15 +1710,15 @@ export class Harness {
   }
 
   /**
-   * A builtin node goes back to Syncthing for a while (§7: restoring finishes the batch in flight, then the tree is
-   * Syncthing's and the engine writes nothing there) and returns to builtin. Only nodes that started builtin.
+   * A builtin node goes back to shadow for a while (the batch in flight finishes, then the engine writes nothing
+   * into the tree) and returns to builtin. Only nodes that started builtin.
    */
   async changePhase(node: HarnessNode): Promise<void> {
     if ((this.options.phases?.[node.index] ?? "builtin") !== "builtin" || this.dead.has(node.core)) return;
     this.counters.phaseChanges++;
     if (node.phase === "builtin") {
-      node.phase = "syncthing";
-      this.note(`${node.id} goes back to Syncthing`);
+      node.phase = "shadow";
+      this.note(`${node.id} goes back to shadow`);
       if (node.shared) await this.configure(node);
       await this.settle();
       node.snapshot = this.treeText(node);

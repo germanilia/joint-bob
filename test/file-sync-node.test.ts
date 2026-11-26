@@ -96,8 +96,8 @@ test("the main thread's bridge drives the real worker thread: configure, scan, s
   });
   t.after(() => bridge.stop());
   bridge.start();
-  const share = { key: "project:p1", projectId: "p1", kind: "project" as const, root, phase: "syncthing" as const, rules: EMPTY_RULE_SETTINGS, peers: ["node-b"] };
-  assert.deepEqual(await bridge.call("configure", { enabled: true, hostId: "host-a", shares: [share], peers: [], records: { engines: [], settings: [] } }), { origins: [] });
+  const share = { key: "project:p1", projectId: "p1", kind: "project" as const, root, phase: "shadow" as const, rules: EMPTY_RULE_SETTINGS, peers: ["node-b"] };
+  assert.deepEqual(await bridge.call("configure", { enabled: true, hostId: "host-a", shares: [share], peers: [], records: { settings: [] } }), { origins: [] });
   const scanned = await bridge.call("scan", { share: "project:p1", scope: "full", reason: "test" });
   assert.deepEqual([scanned.share, scanned.newGeneration, scanned.tombstones, scanned.error], ["project:p1", true, 0, undefined]);
   const [status] = await bridge.call("status", {});

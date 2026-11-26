@@ -386,12 +386,6 @@ export function getRuntimeDefaults(): Record<string, RuntimeSettings> & { pi: Ru
   return runtimeRecord((adapter) => adapter.configuration.defaults(runtimeHome())) as Record<string, RuntimeSettings> & { pi: RuntimeSettings; claude: RuntimeSettings };
 }
 
-/** The connection to Syncthing an older release stored here, read once to take Joint Bob's folders out of it (file-sync/syncthing-retirement.ts). */
-export function legacySyncthingConnection(): { endpoint?: string; apiKey?: string } {
-  const endpoint = setting("syncthing.endpoint")?.value, key = setting("syncthing.apiKey");
-  try { return { ...(endpoint ? { endpoint } : {}), ...(key ? { apiKey: decrypt(key.value) } : {}) }; } catch { return endpoint ? { endpoint } : {}; }
-}
-
 export function emptyResourcePaths(): ResourcePaths {
   return { skills: [], prompts: [], rules: [], plugins: [] };
 }

@@ -11,7 +11,7 @@ import { ensurePeerEndpointSchema, recordPeerEndpoint } from "../src/cluster-pee
 import { ensureResourceSharingSchema } from "../src/cluster-sharing.js";
 import { addSharingMember, createSharingCluster, getSharingCluster, recordRelaySharingHeartbeat, registerOwnedResource, setResourceShares } from "../src/cluster-sharing-policy.js";
 import { workerLaunch } from "../src/file-sync/bridge.js";
-import { comparedProjects, ensureControlSchema, ensureRevisionTriggers, fileSyncListenAddresses, readFileSyncConfig, readRevision, saveSettingsRecord, tailnetAddresses, writeFileSyncConfig } from "../src/file-sync/control.js";
+import { comparedProjects, ensureControlSchema, ensureRevisionTriggers, fileSyncListenAddresses, holdsEngineProjects, listPhases, phaseOf, readFileSyncConfig, readRevision, saveSettingsRecord, setPhase, tailnetAddresses, writeFileSyncConfig } from "../src/file-sync/control.js";
 import { acceptablePeerOrigin, forgetPeerFileSync, notePeerFileSync, onPeerFileSyncChanged, parseFileSyncPart, peerFileSync, peerSpecs, predatesAutoSwitch } from "../src/file-sync/peers.js";
 import type { ConfigureArgs, ShareStatus } from "../src/file-sync/protocol.js";
 import { deriveShares, droppedShares, fileSyncHostId, shareContaining, type DeriveInput } from "../src/file-sync/shares.js";
@@ -126,6 +126,39 @@ test("a stored list is what comparedProjects gives, and All keeps the last chose
   assert.equal(comparedProjects(readFileSyncConfig(db, {})), "all");
 });
 
+test("a node.db of a release that chose a sync engine per project loses those choices and its in-between phases; take-overs done or under way stay", () => {
+  const db = new DatabaseSync(":memory:");
+  // The two tables as that release made them, with what it could hold.
+  db.exec(`CREATE TABLE file_sync_engines(project_id TEXT PRIMARY KEY, mode TEXT NOT NULL CHECK(mode IN ('syncthing','builtin')), generation INTEGER NOT NULL, updated_at TEXT NOT NULL, origin TEXT NOT NULL);
+    CREATE TABLE file_sync_phases(project_id TEXT PRIMARY KEY, phase TEXT NOT NULL CHECK(phase IN ('syncthing','releasing','bootstrapping','builtin','restoring')), builtin_since TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL, error TEXT);
+    INSERT INTO file_sync_engines VALUES ('alpha', 'builtin', 2, '${NOW}', '${LOCAL}'), ('gamma', 'syncthing', 1, '${NOW}', '${PEER}');
+    INSERT INTO file_sync_phases VALUES ('alpha', 'builtin', '{"project":3,"tickets":1}', '${NOW}', NULL), ('beta', 'bootstrapping', '{"project":5}', '${NOW}', 'waiting'),
+      ('gamma', 'syncthing', '{}', '${NOW}', NULL), ('delta', 'releasing', '{}', '${NOW}', NULL), ('epsilon', 'restoring', '{"project":9}', '${NOW}', 'stopped')`);
+  ensureControlSchema(db);
+  assert.deepEqual([...listPhases(db)].map(([id, record]) => [id, record.phase, record.builtinSince, record.error]), [
+    ["alpha", "builtin", { project: 3, tickets: 1 }, null],
+    ["beta", "bootstrapping", { project: 5 }, "waiting"],
+  ], "a project that was between engines has no phase again, so it is taken over from the start");
+  assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'file_sync_engines'").get(), undefined);
+  assert.equal(holdsEngineProjects(db), true);
+  // "shadow" is no row at all, in a table an older release made as in a new one.
+  setPhase(db, "alpha", "shadow");
+  assert.equal(phaseOf(db, "alpha"), undefined);
+  setPhase(db, "gamma", "bootstrapping", { error: "waiting" });
+  setPhase(db, "gamma", "builtin", { builtinSince: { project: 1 } });
+  assert.deepEqual([phaseOf(db, "gamma")?.phase, phaseOf(db, "gamma")?.builtinSince, phaseOf(db, "gamma")?.error], ["builtin", { project: 1 }, null]);
+  for (const id of ["beta", "gamma"]) setPhase(db, id, "shadow");
+  assert.equal(holdsEngineProjects(db), false);
+
+  // A new node.db takes the two phases a take-over records, and nothing else.
+  const fresh = database();
+  setPhase(fresh, "alpha", "bootstrapping");
+  setPhase(fresh, "alpha", "builtin");
+  setPhase(fresh, "beta", "shadow");
+  assert.deepEqual([...listPhases(fresh).keys()], ["alpha"]);
+  assert.throws(() => fresh.prepare("INSERT INTO file_sync_phases VALUES ('beta', 'elsewhere', '{}', ?, NULL)").run(NOW), /CHECK constraint failed/);
+});
+
 test("a change to a project's root or sharing bumps the revision; touching the project does not", () => {
   const db = sharedFixture();
   assert.ok(ensureRevisionTriggers(db) > 0);
@@ -218,9 +251,9 @@ test("a watched table created later gets its triggers on the next pass", () => {
 test("a shared project gets a project, a tickets and a worktrees share at their roots, with its eligible peer", () => {
   const shares = deriveShares(sharedFixture(), input());
   assert.deepEqual(shares.map(({ key, kind, root, phase, peers }) => ({ key, kind, root, phase, peers })), [
-    { key: "project:alpha", kind: "project", root: "/projects/alpha", phase: "syncthing", peers: [PEER] },
-    { key: "tickets:alpha", kind: "tickets", root: path.join("/home/tickets", "alpha"), phase: "syncthing", peers: [PEER] },
-    { key: "worktrees:alpha", kind: "worktrees", root: "/home/worktrees/alpha", phase: "syncthing", peers: [PEER] },
+    { key: "project:alpha", kind: "project", root: "/projects/alpha", phase: "shadow", peers: [PEER] },
+    { key: "tickets:alpha", kind: "tickets", root: path.join("/home/tickets", "alpha"), phase: "shadow", peers: [PEER] },
+    { key: "worktrees:alpha", kind: "worktrees", root: "/home/worktrees/alpha", phase: "shadow", peers: [PEER] },
   ]);
 });
 
@@ -258,10 +291,10 @@ test("deriveShares takes every project when told \"all\" (file sync on), else th
   assert.deepEqual(projects({ shadowProjects: [] }), []);
   assert.deepEqual(projects({ shadowProjects: ["beta"] }), ["beta"]);
   assert.deepEqual(projects({ shadowProjects: "all" }), ["alpha", "beta"]);
-  assert.deepEqual(projects({ shadowProjects: [], phases: new Map<string, Phase>([["alpha", "builtin"], ["beta", "syncthing"]]) }), ["alpha"]);
+  assert.deepEqual(projects({ shadowProjects: [], phases: new Map<string, Phase>([["alpha", "builtin"], ["beta", "shadow"]]) }), ["alpha"]);
   assert.deepEqual(projects({ shadowProjects: [], phases: new Map<string, Phase>([["beta", "bootstrapping"]]) }), ["beta"], "a take-over under way keeps its shares with file sync off");
   // No phase here yet: derived all the same, in the phase the worker writes nothing in, so the take-over finds its folders.
-  assert.deepEqual(deriveShares(db, input()).map((share) => [share.key, share.phase]).slice(0, 3), [["project:alpha", "syncthing"], ["tickets:alpha", "syncthing"], ["worktrees:alpha", "syncthing"]]);
+  assert.deepEqual(deriveShares(db, input()).map((share) => [share.key, share.phase]).slice(0, 3), [["project:alpha", "shadow"], ["tickets:alpha", "shadow"], ["worktrees:alpha", "shadow"]]);
   assert.equal(deriveShares(db, input({ shadowProjects: [], phases: new Map<string, Phase>([["alpha", "builtin"]]) }))[0].phase, "builtin");
 });
 
@@ -483,7 +516,6 @@ test("the engine's configure, its records and capability events, and the admin r
   db.prepare("INSERT INTO cluster_v2_resource_policy VALUES ('project', 'beta', ?, 1, 0)").run(PEER);
 
   const recordAt = new Date(Date.now() - 60_000).toISOString();
-  const betaEngine = { projectId: "beta", mode: "builtin", generation: 1, updatedAt: recordAt, origin: PEER };
   const peerGlobal = { key: `global:${PEER}`, value: { ...EMPTY_RULE_SETTINGS, userRules: ["*.wav"] }, updatedAt: recordAt, origin: PEER };
   const peerRoute = { peer: PEER, cursor: 3, peerMaxSeq: 3, peerIndexId: "x", peerDigest: null, rulesMatch: true, caughtUp: true, differences: 0, cleanSince: null, route: "direct" };
   const errorsPage = { total: 7, items: [{ path: "a.txt", kind: "error", reason: "Permission denied", at: NOW }] };
@@ -493,11 +525,11 @@ test("the engine's configure, its records and capability events, and the admin r
     workerData: {
       log, origins: ["http://127.0.0.1:22755"],
       emit: {
-        configure: [{ event: "shareState", status: { ...share({ phase: "syncthing" }), peers: [peerRoute] } }],
+        configure: [{ event: "shareState", status: { ...share({ phase: "shadow" }), peers: [peerRoute] } }],
         announce: [
           { event: "capability", peer: PEER, protocol: 1, enabled: true, origins: ["http://192.168.1.20:22700", "http://169.254.169.254:80"], hostId: "host-peer" },
-          // Only beta's engine (PEER owns it) and PEER's own global rules count.
-          { event: "records", fromPeer: PEER, engines: [betaEngine, { ...betaEngine, projectId: "alpha" }], settings: [peerGlobal, { ...peerGlobal, key: "project:alpha", origin: SECOND }] },
+          // Only PEER's own global rules count.
+          { event: "records", fromPeer: PEER, settings: [peerGlobal, { ...peerGlobal, key: "project:alpha", origin: SECOND }] },
         ],
       },
       answers: { errors: errorsPage, differences: differencesPage, confirmReplacedRoot: scanResult("tickets:alpha") },
@@ -530,12 +562,12 @@ test("the engine's configure, its records and capability events, and the admin r
   assert.deepEqual(first.listen, { addresses: ["127.0.0.1"], port: 22755 });
   assert.deepEqual(first.shares.map((spec) => [spec.key, spec.peers]), [["project:alpha", [PEER, SECOND]], ["tickets:alpha", [PEER, SECOND]], ["worktrees:alpha", [PEER, SECOND]]]);
   assert.deepEqual(first.peers.map((spec) => [spec.nodeId, spec.origins, spec.present]), [[PEER, [], true], [SECOND, [], true]]);
-  assert.deepEqual(first.records, { engines: [], settings: [] });
+  assert.deepEqual(first.records, { settings: [] });
 
   // After its first configure the worker asks peers what changed; what it learns comes back as events.
-  const updated = await until(configures, (list) => list.some((args) => args.records.engines.length > 0), "a configure with the accepted records");
+  const updated = await until(configures, (list) => list.some((args) => args.records.settings.length > 0), "a configure with the accepted records");
   const latest = updated.at(-1)!;
-  assert.deepEqual(latest.records, { engines: [betaEngine], settings: [peerGlobal] });
+  assert.deepEqual(latest.records, { settings: [peerGlobal] });
   assert.deepEqual(latest.peers.map((spec) => [spec.nodeId, spec.origins]), [[PEER, ["http://192.168.1.20:22700"]], [SECOND, []]]);
   assert.deepEqual((await stubOps(log)).filter((entry) => entry.op === "announce").map((entry) => entry.args), [{ slept: false }], "one announce after the worker started");
 

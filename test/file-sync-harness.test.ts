@@ -333,10 +333,10 @@ test("a crash stops the core at once: its small temp stays for the restarted nod
 test("the engine never writes a tree whose phase is not builtin, and oracle (f) would see it", async (t) => {
   for (let seed = 1; seed <= 5; seed++) {
     // Crashes are the convergence test's business; here they would only add its findings.
-    const result = await runSeed({ seed, nodes: 2, phases: ["builtin", "syncthing"], weights: { crash: 0 } });
+    const result = await runSeed({ seed, nodes: 2, phases: ["builtin", "shadow"], weights: { crash: 0 } });
     assert.deepEqual(result.problems, [], result.report);
   }
-  const h = await harness(t, { phases: ["builtin", "syncthing"] });
+  const h = await harness(t, { phases: ["builtin", "shadow"] });
   const [a, b] = h.nodes;
   h.write(a, "from-a.txt", "a builtin node's file\n");
   await h.scan(a);
@@ -344,7 +344,7 @@ test("the engine never writes a tree whose phase is not builtin, and oracle (f) 
   assert.deepEqual(readdirSync(b.root), [], "the shadow node got nothing");
   writeFileSync(path.join(b.root, "written-by-someone.txt"), "not through the harness\n");
   h.checkShadows();
-  assert.match(h.violations.join("\n"), /^\(f\) the engine wrote into node-b's tree in phase syncthing/);
+  assert.match(h.violations.join("\n"), /^\(f\) the engine wrote into node-b's tree in phase shadow/);
 });
 
 test("the network faults happen, and the engines still converge", async () => {

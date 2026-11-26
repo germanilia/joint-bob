@@ -5,13 +5,14 @@ import { peerAway } from "../peer-presence.js";
 import { onRelayPeersChanged } from "../relay/events.js";
 import { settled, warnOnChange } from "../server/quiet-log.js";
 import type { BridgeOptions, BridgeState, WorkerBridge } from "./bridge.js";
-import { controlDatabase, ensureRevisionTriggers, fileSyncListenAddresses, holdsEngineProjects, listEngineRecords, listPhases, listSettingsRecords, markProjectsIndexed, readFileSyncConfig, readIndexedProjects, readRevision, setPhase, writeFileSyncConfig, type FileSyncConfig, type FileSyncConfigPatch } from "./control.js";
+import { controlDatabase, ensureRevisionTriggers, fileSyncListenAddresses, holdsEngineProjects, listPhases, listSettingsRecords, markProjectsIndexed, readFileSyncConfig, readIndexedProjects, readRevision, setPhase, writeFileSyncConfig, type FileSyncConfig, type FileSyncConfigPatch } from "./control.js";
 import { FirstIndexQueue, type IndexingStatus } from "./first-index.js";
 import { acceptablePeerOrigin, helloFileSync, notePeerFileSync, onPeerFileSyncChanged, onPeerPresent, parseFileSyncPart, peerFileSync, peerOrigins, peerSpecs, type HelloFileSync } from "./peers.js";
 import { FILE_SYNC_SWITCH_PROTOCOL, type ConfigureArgs, type CoreEvent, type DifferenceItem, type ErrorItem, type ListPage, type PendingFiles, type RequestStats, type ScanResult, type ShareSpec, type ShareStatus } from "./protocol.js";
 import { ShareStatusStore } from "./status.js";
 import { parseShareKey, type Phase } from "./types.js";
 import type { Adoption, AdoptionEngine, FileSyncProject } from "./adoption.js";
+import { forgetSavedConnection, removeSyncthing, savedConnection, WAITING_FOR_SYNCTHING } from "./syncthing-removal.js";
 // app-integration (P4)
 import path from "node:path";
 import type { ShareKind } from "./types.js";
@@ -200,11 +201,10 @@ async function derive(current: Engine): Promise<void> {
     const records = listSettingsRecords(current.db);
     // Only "builtin" lets the worker write a project's files; every other phase is a take-over still to finish (adoption.ts).
     const phases = new Map([...listPhases(current.db)].map(([projectId, record]): [string, Phase] => [projectId, record.phase]));
-    const switched = new Set(listEngineRecords(current.db).map((record) => record.projectId));
     // Every project shared with another machine is synced; a list an older release let a person choose no longer narrows it.
-    const allowed = loaded.shares.deriveShares(current.db, { local: current.nodeId, shadowProjects: config.enabled ? "all" : [], phases, switched, settings: new Map(records.map((record) => [record.key, record.value])) });
+    const allowed = loaded.shares.deriveShares(current.db, { local: current.nodeId, shadowProjects: config.enabled ? "all" : [], phases, settings: new Map(records.map((record) => [record.key, record.value])) });
     // Projects never indexed here go in one at a time; those already being taken over are wanted now.
-    const shares = current.queue.admit(allowed, (projectId) => (phases.get(projectId) ?? "syncthing") !== "syncthing" || switched.has(projectId));
+    const shares = current.queue.admit(allowed, (projectId) => phases.has(projectId));
     // Every peer main's cluster routes accept, not only those sharing a folder now: the direct listener verifies the same
     // signatures, and a share the caller is not in gets the service's 403 (not retried) instead of a 401 (retried for good).
     const peers = peerSpecs(current.db, [...shares.flatMap((share) => share.peers), ...loaded.shares.verifiablePeers(current.db, current.nodeId)]);
@@ -216,7 +216,7 @@ async function derive(current: Engine): Promise<void> {
     current.desired = {
       enabled: true, hostId: current.hostId, ...(current.signingKey ? { signingKey: current.signingKey } : {}),
       listen: { addresses: fileSyncListenAddresses(), port: config.port },
-      shares, peers, records: { engines: listEngineRecords(current.db), settings: records }, ...(dropShares.length ? { dropShares } : {}),
+      shares, peers, records: { settings: records }, ...(dropShares.length ? { dropShares } : {}),
       // Apply never lowers group bits on Linux in multi-user mode (§1 Permissions); "turned on" holds even while its helper is missing.
       multiUser: loaded.account.multiUserTurnedOn(),
     };
@@ -269,14 +269,14 @@ function projectName(db: DatabaseSync, projectId: string): string {
   try { return (db.prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? projectId; } catch { return projectId; }
 }
 
-/** Once, on the first start of this release: the projects this node already compared (its chosen list, any switched) count as indexed, so they keep their place. */
+/** Once, on the first start of a release with the one-at-a-time first index: the projects this node already compared (its chosen list, any taken over) count as indexed, so they keep their place. */
 function seedIndexedProjects(db: DatabaseSync): void {
   try {
     if (readIndexedProjects(db) !== undefined) return;
     const stored = db.prepare("SELECT value FROM file_sync_config WHERE key = 'shadowProjects'").get() as { value: string } | undefined;
     let chosen: string[] = [];
     try { const parsed = stored ? JSON.parse(stored.value) as unknown : undefined; if (Array.isArray(parsed)) chosen = parsed.filter((id): id is string => typeof id === "string"); } catch { /* none chosen */ }
-    markProjectsIndexed(db, [...chosen, ...listPhases(db).keys(), ...listEngineRecords(db).map((record) => record.projectId)]);
+    markProjectsIndexed(db, [...chosen, ...listPhases(db).keys()]);
   } catch (error) {
     warnOnChange("fileSync:index", `File sync could not read which projects it indexed before: ${messageOf(error)}`);
   }
@@ -333,10 +333,10 @@ async function receiveRecords(current: Engine, event: Extract<CoreEvent, { event
   try {
     const loaded = await load();
     if (engine !== current) return;
-    const outcome = loaded.records.acceptRecords(current.db, current.nodeId, { fromPeer: event.fromPeer, engines: event.engines ?? [], settings: event.settings ?? [] });
+    const outcome = loaded.records.acceptRecords(current.db, current.nodeId, { fromPeer: event.fromPeer, settings: event.settings ?? [] });
     settled("fileSync:records");
     // The triggers on the record tables would get there on the next 2 s pass; this does not wait for it.
-    if (outcome.engines || outcome.settings) requestDerive(current);
+    if (outcome.settings) requestDerive(current);
   } catch (error) {
     warnOnChange("fileSync:records", `File sync could not store records from ${event.fromPeer}: ${messageOf(error)}`);
   }
@@ -476,7 +476,7 @@ export interface FileSyncPeerStatus {
   present: boolean;
   /** null: not heard from since this node started; 0: the peer has no file sync engine. */
   protocol: number | null;
-  /** fix (P4+P5): its engine can move a project to built-in sync (null: not heard from). */
+  /** Its engine can take a project over, and so receive files (null: not heard from). */
   switchCapable: boolean | null;
   enabled: boolean | null;
   origins: string[];
@@ -523,8 +523,7 @@ function peerStatuses(current: Engine, shares: readonly ShareStatus[]): FileSync
 export async function fileSyncStatus(): Promise<FileSyncStatusAnswer> {
   const config = readFileSyncConfig(await controlDatabase());
   const current = engine;
-  // cutover-engine (P5): each share carries its project's engine, so a builtin share tells from a shadow one.
-  const shares = current ? withEngines(statuses.list(current.shares)) : [];
+  const shares = current ? statuses.list(current.shares) : [];
   // The counters live in the worker's network layer; a busy or restarting worker leaves them out rather than holding up the page.
   const stats = current?.bridge.state === "running" ? await current.bridge.call("stats", {}, { timeoutMs: STATS_TIMEOUT_MS }).catch(() => undefined) : undefined;
   return {
@@ -619,7 +618,7 @@ export async function applyFileSyncConfig(patch: FileSyncConfigPatch): Promise<F
   return fileSyncStatus();
 }
 
-/* Tests only: a project's node-local phase set directly, without the switch (P5) and its bootstrap, so
+/* Tests only: a project's node-local phase set directly, without the take-over and its bootstrap, so
    two real nodes can run the engine in builtin mode. Present only under NODE_ENV=test with
    JOINT_BOB_FILE_SYNC_TEST_PHASES=1; admin-routes.ts registers its route under the same condition. */
 
@@ -677,29 +676,40 @@ async function announceSwitch(): Promise<void> {
   catch (error) { warnOnChange("fileSync:hello", `File sync could not tell the other machines it was turned ${readFileSyncConfig(await controlDatabase()).enabled ? "on" : "off"}: ${messageOf(error)}`); }
 }
 
-/** Whether this machine's Syncthing has let go of Joint Bob's folders (syncthing-retirement.ts); one request at a time. */
-let releasing: Promise<boolean> | undefined;
-const RETIRE_BOOT_GRACE_MS = 3 * 60_000, RETIRE_ASK_MS = 10 * 60_000, RETIRE_ASKS = 6;
-let retireAsks = 0;
-function syncthingReleased(db: DatabaseSync): Promise<boolean> {
-  // A test node must never reach for the Syncthing of the machine the tests run on.
-  if (process.env.NODE_ENV === "test" || fileSyncTestPhasesEnabled()) return Promise.resolve(true);
+/* An earlier release's sync tool is taken off this machine once (syncthing-removal.ts). Until it has let
+   go of Joint Bob's folders no project is taken over: `foldersHeldBy` says what a take-over waits for,
+   or undefined once nothing but built-in sync writes them. One request at a time. */
+let releasing: Promise<string | undefined> | undefined;
+const RELEASE_BOOT_GRACE_MS = 3 * 60_000, RELEASE_ASK_MS = 10 * 60_000, RELEASE_ASKS = 6;
+let releaseAsks = 0;
+function foldersHeldBy(db: DatabaseSync): Promise<string | undefined> {
+  // A test node must never reach for the sync tool of the machine the tests run on.
+  if (process.env.NODE_ENV === "test" || fileSyncTestPhasesEnabled()) return Promise.resolve(undefined);
   return releasing ??= (async () => {
     try {
-      const [{ retireSyncthing }, { legacySyncthingConnection }] = await Promise.all([import("./syncthing-retirement.js"), import("../settings.js")]);
-      const outcome = await retireSyncthing({ db, stored: legacySyncthingConnection });
-      if (outcome !== "idle") return outcome === "done";
-      // No Syncthing answers. Right after a boot it may only be starting, beside this node: projects wait a few minutes
+      const [{ projectRoots }, { ticketWorkspaceRoot }, { agentResourcesRoot }, { resolveDataDirectory }] = await Promise.all([loadAdoption(), import("../task-workspaces.js"), import("../agent-resources.js"), import("../data-directory.js")]);
+      // Every folder Joint Bob syncs or once synced here: each project's three, the removed board's, and the shared skills'.
+      const roots = (): string[] => [
+        ...(db.prepare("SELECT id FROM projects").all() as Array<{ id: string }>).flatMap((project) => Object.values(projectRoots(db, project.id) ?? {})),
+        ticketWorkspaceRoot(), agentResourcesRoot(),
+      ];
+      const outcome = await removeSyncthing({
+        db, stored: savedConnection, forget: forgetSavedConnection, roots,
+        backupFile: path.join(resolveDataDirectory(), "removed-sync-ignore-files.txt"),
+      });
+      if (outcome === "done") return undefined;
+      if (outcome === "waiting") return WAITING_FOR_SYNCTHING;
+      // It does not answer. Right after a boot it may only be starting, beside this node: projects wait a few minutes
       // for it. After that nothing writes their folders, and it is asked again a few times in case it starts later.
-      if (retireAsks < RETIRE_ASKS) {
-        retireAsks++;
-        const timer = setTimeout(() => { void syncthingReleased(db).then(() => adoptionKick()); }, RETIRE_ASK_MS);
+      if (releaseAsks < RELEASE_ASKS) {
+        releaseAsks++;
+        const timer = setTimeout(() => { void foldersHeldBy(db).then(() => adoptionKick()); }, RELEASE_ASK_MS);
         timer.unref();
       }
-      return process.uptime() * 1000 > RETIRE_BOOT_GRACE_MS;
+      return process.uptime() * 1000 > RELEASE_BOOT_GRACE_MS ? undefined : WAITING_FOR_SYNCTHING;
     } catch (error) {
-      warnOnChange("fileSync:retire", `Joint Bob could not take its folders out of this machine's Syncthing: ${messageOf(error)}`);
-      return false;
+      warnOnChange("fileSync:release", `Joint Bob could not take its folders away from the sync tool an earlier release used on this machine: ${messageOf(error)}`);
+      return WAITING_FOR_SYNCTHING;
     }
   })().finally(() => { releasing = undefined; });
 }
@@ -712,10 +722,10 @@ function startAdoption(current: Engine): void {
       const module = await loadAdoption();
       if (engine !== current) return;
       adoption?.machine.stop();
-      const machine = new module.Adoption({ db: current.db, nodeId: current.nodeId, engine: adoptionEngine(current), released: () => syncthingReleased(current.db), log: warnOnChange });
+      const machine = new module.Adoption({ db: current.db, nodeId: current.nodeId, engine: adoptionEngine(current), heldBy: () => foldersHeldBy(current.db), log: warnOnChange });
       adoption = { engine: current, machine };
-      // Also where nothing waits to be taken over: the folders an older release gave Syncthing leave it once.
-      void syncthingReleased(current.db);
+      // Also where nothing waits to be taken over: what an earlier release's sync tool left on this machine goes once.
+      void foldersHeldBy(current.db);
       neutral(() => machine.kick());
     } catch (error) {
       warnOnChange("fileSync:adopt", `File sync could not go on taking over this machine's shared projects: ${messageOf(error)}`);
@@ -736,10 +746,6 @@ async function adoptionMachine(): Promise<Adoption> {
   const db = current?.db ?? await controlDatabase();
   const nodeId = current?.nodeId ?? (await (await load()).cluster.getClusterNode()).id;
   return new module.Adoption({ db, nodeId, engine: adoptionEngine(undefined), log: warnOnChange });
-}
-
-function withEngines(shares: ShareStatus[]): ShareStatus[] {
-  return shares.map((share) => ({ ...share, engine: "builtin" as const }));
 }
 
 /** Every project shared with another machine, and whether this node has taken it over yet. */

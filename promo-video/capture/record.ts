@@ -114,7 +114,7 @@ let browser: Awaited<ReturnType<typeof openBrowser>> | undefined;
 try {
   // When these takes were made, a twin with no file synchronization showed as "Twin · error" on
   // the cluster map, the one place the team take looks at. That take is about the laptop and the
-  // teammate, so it runs unpaired. Not rechecked since Syncthing was removed (2026-11-10).
+  // teammate, so it runs unpaired. Not rechecked since file sync became part of Joint Bob (2026-11-10).
   if (only !== "cluster") await pairTwins(environment);
   browser = await openBrowser(environment);
 

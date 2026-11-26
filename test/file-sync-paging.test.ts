@@ -69,9 +69,9 @@ function setup(t: TestContext) {
     const result: Node = {
       id, root, core,
       configure: (sharePeers = peers, share = {}) => core.call("configure", {
-        enabled: true, hostId: `host-${id}`, records: { engines: [], settings: [] },
+        enabled: true, hostId: `host-${id}`, records: { settings: [] },
         peers: sharePeers.map((nodeId) => ({ nodeId, publicKey: "unused", origins: [], present: true })),
-        shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: "syncthing", rules: {}, peers: sharePeers, ...share }],
+        shares: [{ key: SHARE, projectId: "p1", kind: "project", root, phase: "shadow", rules: {}, peers: sharePeers, ...share }],
       } satisfies ConfigureArgs),
       scan: () => core.call("scan", { share: SHARE, scope: "full", reason: "test" }),
     };

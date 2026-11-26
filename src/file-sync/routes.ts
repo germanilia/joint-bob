@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ClusterV2HttpError } from "../cluster-v2-errors.js";
 import { sendError } from "../server/http-auth.js";
 import { app } from "../server/state.js";
-import { FILE_SYNC_MIN_PROTOCOL, FILE_SYNC_PROTOCOL, type FilesEndpoint, type ServeAnswer } from "./protocol.js";
+import { FILE_SYNC_MIN_PROTOCOL, FILE_SYNC_PROTOCOL, LEGACY_SHARES_FIELDS, type FilesEndpoint, type ServeAnswer } from "./protocol.js";
 
 /* /api/cluster/v2/files/* on the main server: the relay-fallback path into the worker's
    FilesService (FILE-SYNC design §6.3). requireHttpAuth has already verified the signed request
@@ -38,7 +38,7 @@ async function offSharesAnswer(): Promise<unknown> {
   const [{ getClusterNode }, { fileSyncHostId }] = await Promise.all([import("../cluster.js"), import("./shares.js")]);
   return {
     fileSync: { protocol: FILE_SYNC_PROTOCOL, minProtocol: FILE_SYNC_MIN_PROTOCOL, enabled: false },
-    nodeId: (await getClusterNode()).id, hostId: fileSyncHostId(), origins: [], shares: [], engines: [], settings: [],
+    nodeId: (await getClusterNode()).id, hostId: fileSyncHostId(), origins: [], shares: [], settings: [], ...LEGACY_SHARES_FIELDS,
   };
 }
 

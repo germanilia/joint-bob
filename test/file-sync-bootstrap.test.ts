@@ -8,7 +8,7 @@ import { createWorkerCore, type FileSyncCore } from "../src/file-sync/core.js";
 import { FILE, type Clock, type IndexEntry, type Phase } from "../src/file-sync/types.js";
 import { canonicalVector, compareVectors, mergeVectors } from "../src/file-sync/vectors.js";
 
-/* §7.3: the switch to builtin decides every path once with one extra rule. Entries made while Syncthing
+/* §7.3: the take-over decides every path once with one extra rule. Entries made while another tool
    copied files without telling the engine (every local one, a peer's up to its builtinSince) never delete
    a live file and never replace one with other content without keeping it. */
 
@@ -42,7 +42,7 @@ async function node(t: TestContext, files: Record<string, string>, phase: Phase 
   const core = createWorkerCore({ nodeId: SELF, dataDir: path.join(dir, "data"), clock, random: () => (seed = (seed * 16807) % 2147483647) / 2147483647, watch: false, emit: () => {} });
   t.after(async () => { await core.close(); rmSync(dir, { recursive: true, force: true }); });
   await core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key, projectId: "p1", kind: "project", root, phase, rules: {}, peers: [PEER, OTHER] }],
   });
   await core.call("scan", { share: key, scope: "full", reason: "test" });
@@ -110,7 +110,7 @@ test("a local tombstone of other content never deletes a peer's live file: it le
   unlinkSync(path.join(n.root, "exact.txt"));
   await n.core.call("scan", { share: n.key, scope: "full", reason: "test" });
   assert.deepEqual([n.local("gone.txt").deleted, n.local("exact.txt").deleted], [true, true]);
-  // Syncthing gave the peer other bytes under the version this node had seen; this node's delete dominates them.
+  // Something else gave the peer other bytes under the version this node had seen; this node's delete dominates them.
   await n.pull(PEER, [{ path: "gone.txt", size: 6, sha256: sha("theirs"), version: gone.version }, { path: "exact.txt", size: 5, sha256: sha("exact"), version: exact.version }]);
   assert.equal(n.core.db.needRow(n.key, "gone.txt"), undefined, "the ordinary rule keeps the tombstone (the peer would delete its file)");
   const prunedBefore = n.core.db.share(n.key)!.prunedBelow;
@@ -154,7 +154,7 @@ test("a peer missing from builtinSinceByPeer is not builtin yet: all its rows ar
   assert.equal(n.core.db.share(n.key)!.builtinSince, n.core.db.share(n.key)!.maxSeq);
   // Builtin now: the stored rows decide, and the raised version keeps x.txt.
   await n.core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key: n.key, projectId: "p1", kind: "project", root: n.root, phase: "builtin", rules: {}, peers: [PEER, OTHER] }],
   });
   await n.core.need.idle();
@@ -167,7 +167,7 @@ test("bootstrap refuses an index that is not complete yet", async (t) => {
   await assert.rejects(n.core.call("bootstrap", { share: n.key, builtinSinceByPeer: {} }), /not finished indexing/);
 });
 
-test("bootstrap waits for every peer's whole index: a Syncthing-era tombstone still being paged in never deletes a live file", async (t) => {
+test("bootstrap waits for every peer's whole index: a tombstone from before the take-over, still being paged in, never deletes a live file", async (t) => {
   const n = await node(t, { "x.txt": "live here", "a.txt": "a" }, "bootstrapping");
   const x = n.local("x.txt");
   // OTHER is not builtin (absent from builtinSinceByPeer): every row of its index is weak. Its new listing comes in two pages.
@@ -176,12 +176,12 @@ test("bootstrap waits for every peer's whole index: a Syncthing-era tombstone st
   await page(0, [row(1, { path: "a.txt", size: 1, sha256: sha("a"), version: n.local("a.txt").version })], true);
   await assert.rejects(n.bootstrap({ [PEER]: 0 }), (error: Error & { code?: string }) => error.code === "not-ready" && /whole index of node-c/.test(error.message));
   assert.equal(n.core.db.share(n.key)!.builtinSince, null, "not switched");
-  // The rest of the listing: a tombstone Syncthing made there over other content, dominating this node's version.
+  // The rest of the listing: a tombstone made there over other content before the take-over, dominating this node's version.
   await page(1, [row(2, { path: "x.txt", deleted: true, size: 3, sha256: sha("old"), version: mergeVectors(x.version, { [OTHER]: 50 }) })], false);
   await n.core.need.idle();
   await n.bootstrap({ [PEER]: 0 });
   await n.core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key: n.key, projectId: "p1", kind: "project", root: n.root, phase: "builtin", rules: {}, peers: [PEER, OTHER] }],
   });
   await n.core.need.idle();
@@ -212,7 +212,7 @@ test("rows a pull stores while the switch runs are decided under its rule too: t
   await n.bootstrap({ [PEER]: 0 });
   assert.equal(landed, true);
   await n.core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key: n.key, projectId: "p1", kind: "project", root: n.root, phase: "builtin", rules: {}, peers: [PEER, OTHER] }],
   });
   await n.core.need.idle();

@@ -303,6 +303,8 @@ User requirement (2026-10-25): nobody coordinates the switch with the people who
 ### 7.4 Syncthing cleanup (P6)
 
 > **Note, 2026-11-10.** Done differently from the list below. `src/file-sync/syncthing-retirement.ts` runs once per machine and takes Joint Bob's `joint-bob-*` folders out of the local Syncthing's configuration. `.stfolder` and `.stignore` files are left on disk. The daemon is not stopped and no unit is removed, whoever installed it. The per-project switch, the checks, the automatic move and the rollback (7.1 to 7.3a) were deleted: a shared project that is not on built-in sync yet is compared and adopted (`src/file-sync/adoption.ts`).
+>
+> **Note, 2026-11-26.** The rest was done in 2.341.0, in `src/file-sync/syncthing-removal.ts` (it replaced `syncthing-retirement.ts`). Once per machine, after the `joint-bob-*` folders are out, it stops and removes the `joint-bob-syncthing.service` / `com.joint-bob.syncthing` unit and deletes the runtime download, unless that Syncthing still syncs folders that are not Joint Bob's. It takes the machines Joint Bob added out of a Syncthing that stays, once they share no folder. It deletes the `.stignore` files and `.stfolder` markers in Joint Bob's folders and keeps the ignore files' text in the data folder. A Syncthing the person installed, and their own folders, are never touched. The engine records, the `syncthing`, `releasing` and `restoring` phases and the relay's `syncthing` channel kind were deleted: a project that is not taken over yet is in the `shadow` phase.
 
 - Remove every Joint Bob folder from Syncthing's configuration, including the legacy paused ones.
 - Delete `.stfolder` from project roots.
@@ -325,10 +327,7 @@ Each phase ships on its own. P0 fixes known incidents even if the rest is never 
 
 > **P6 status, 2026-11-10: done**, in the release after 2.256.3. Deleted: `src/syncthing.ts`, the relay tunnels, the migration code, `scripts/install-syncthing.sh`, the prerequisite checks, the `versions.sh` entries, the CI apt step, the settings field, the UI and the Syncthing tests. The documents named above were updated.
 >
-> What remains:
-> - One module, `src/file-sync/syncthing-retirement.ts`. Once per machine it takes Joint Bob's `joint-bob-*` folders out of the local Syncthing. It is to be deleted in a later release.
-> - `.stfolder` and `.stignore` files are left on disk.
-> - The Syncthing daemon is not stopped, and a `joint-bob-syncthing.service` / `com.joint-bob.syncthing` unit from an earlier install is not removed. A runtime download under `~/.local/share/joint-bob/runtime/syncthing-v*` is not deleted.
+> What remained was removed in 2.341.0 (2026-11-26), see the note in 7.4. One module is left, `src/file-sync/syncthing-removal.ts`, which does that removal once per machine. It is to be deleted in a later release, when every machine has run it. The engine also keeps ignoring Syncthing's own folder files (`.stfolder`, `.stignore`, `.stversions` and its download temps), so that a Syncthing a person runs on the same folder never has its bookkeeping copied to another machine.
 
 Each phase passes a gate before the next one starts (10.3).
 

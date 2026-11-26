@@ -51,7 +51,7 @@ function clockAt(start = Date.now()): Clock & { advance(ms: number): void } {
   return { now: () => now, setTimeout: () => ({ cancel() {} }), advance(ms) { now += ms; } };
 }
 
-async function node(t: TestContext, options: { kind?: ShareKind; phase?: "builtin" | "syncthing"; faults?: Parameters<typeof createWorkerCore>[0]["faults"]; diskFree?: (dir: string) => number; setup?: (root: string) => void; multiUserLinux?: boolean } = {}): Promise<Node> {
+async function node(t: TestContext, options: { kind?: ShareKind; phase?: "builtin" | "shadow"; faults?: Parameters<typeof createWorkerCore>[0]["faults"]; diskFree?: (dir: string) => number; setup?: (root: string) => void; multiUserLinux?: boolean } = {}): Promise<Node> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "jb-fs-apply-"));
   const root = path.join(dir, "root");
   mkdirSync(root);
@@ -68,7 +68,7 @@ async function node(t: TestContext, options: { kind?: ShareKind; phase?: "builti
     ...(options.multiUserLinux ? { multiUser: true, platform: "linux" as const } : {}),
   });
   const configure = (core: FileSyncCore) => core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key, projectId: "p1", kind, root, phase: options.phase ?? "builtin", rules: {}, peers: [PEER] }],
   });
   options.setup?.(root);
@@ -492,7 +492,7 @@ test("shadow mode writes nothing into the tree; builtin housekeeping only in bui
     utimesSync(path.join(root, stale), new Date(Date.now() - 2 * 3_600_000), new Date(Date.now() - 2 * 3_600_000));
     execFileSync("git", ["init", "-q", root]);
   };
-  const shadow = await node(t, { phase: "syncthing", setup });
+  const shadow = await node(t, { phase: "shadow", setup });
   await shadow.pull([{ path: "a.txt", size: 1, sha256: sha("a") }]);
   assert.equal(shadow.core.db.needCount(shadow.key), 0);
   const temp = path.join(shadow.root, tempNameFor(shadow.key, "a.txt", sha("a")));
@@ -738,12 +738,12 @@ test("darwin: a file sync placed reports its later delete, as FSEvents never doe
 
 test("engine temps stay out of git status: the exclude is written as a share moves into builtin, and in a repository around the project", async (t) => {
   const RULE = ".joint-bob-sync.*.tmp";
-  const n = await node(t, { phase: "syncthing", setup: (root) => execFileSync("git", ["init", "-q", root]) });
+  const n = await node(t, { phase: "shadow", setup: (root) => execFileSync("git", ["init", "-q", root]) });
   const exclude = path.join(n.root, ".git/info/exclude");
   assert.ok(!readFileSync(exclude, "utf8").split("\n").includes(RULE));
   // The switch writes it at once: transfers start right after configure, before any scan.
   await n.core.call("configure", {
-    enabled: true, hostId: "host", peers: [], records: { engines: [], settings: [] },
+    enabled: true, hostId: "host", peers: [], records: { settings: [] },
     shares: [{ key: n.key, projectId: "p1", kind: "project", root: n.root, phase: "builtin", rules: {}, peers: [PEER] }],
   });
   assert.ok(readFileSync(exclude, "utf8").split("\n").includes(RULE));

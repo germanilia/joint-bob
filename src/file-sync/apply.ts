@@ -343,7 +343,7 @@ export class Applier {
     const prefix = `${shareKey}\n`;
     for (const [id, dirs] of [...this.madeDirs]) {
       // `leaving`: the share is about to leave builtin (configure calls this first), so no item is wanted any more: afterwards
-      // nothing may be removed from a tree Syncthing owns again, and an empty folder left there would spread as a new one.
+      // nothing may be removed from a tree this engine no longer writes, and an empty folder left there would spread as a new one.
       if (!id.startsWith(prefix) || (!options.leaving && db.needRow(shareKey, id.slice(prefix.length)))) continue;
       const left = [...dirs].sort((a, b) => depth(b.key) - depth(a.key)).filter((dir) => {
         const entry = db.entry(shareKey, dir.key);
@@ -380,7 +380,7 @@ export class Applier {
   private async run(args: { share: string; items: readonly ApplyItemInput[] }): Promise<ApplyBatchResult> {
     const share = this.deps.share(args.share);
     // Invariant 12: nothing is written into a tree whose phase is not builtin, not even a temp removed. A batch already
-    // running when the phase leaves (§7 restoring) stops before its next item and section and only removes its own temps.
+    // running when the phase leaves stops before its next item and section and only removes its own temps.
     if (!share || share.phase !== "builtin") return { applied: 0, recorded: true, items: args.items.map((item) => ({ path: item.path, outcome: "stale", reason: "The folder is not on built-in sync here" })) };
     const results: Array<ApplyItemResult | undefined> = new Array(args.items.length);
     const names = new DirNames();
@@ -775,7 +775,7 @@ export class Applier {
     }
     if (refusal.blocked) throw refusal.blocked;
     regenerable.sort((a, b) => b.depth - a.depth);
-    // Looked at again right before anything goes, and between slices: a tree handed back to Syncthing keeps its node_modules.
+    // Looked at again right before anything goes, and between slices: a tree this engine no longer writes keeps its node_modules.
     this.stillBuiltin(share);
     for (const [count, entry] of regenerable.entries()) {
       if (entry.type === DIRECTORY) rmdirSync(entry.abs); else unlinkSync(entry.abs);

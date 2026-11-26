@@ -4,11 +4,11 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { clusterV2Database } from "../cluster-v2-store.js";
-import { EMPTY_RULE_SETTINGS, type EngineMode, type EngineRecord, type Phase, type RuleSettings, type SettingsRecord } from "./types.js";
+import { EMPTY_RULE_SETTINGS, type Phase, type RuleSettings, type SettingsRecord } from "./types.js";
 
 /* The control plane's durable state, in node.db (backed up with it): the node's engine config,
-   engine and rule-settings records, each project's node-local phase, and a revision counter that
-   SQLite triggers bump whenever anything a share derives from changes. file-sync.db holds only
+   rule-settings records, each project's node-local phase, and a revision counter that SQLite
+   triggers bump whenever anything a share derives from changes. file-sync.db holds only
    regenerable index state and belongs to the worker. */
 
 export const DEFAULT_FILE_SYNC_PORT = 22700;
@@ -54,13 +54,16 @@ const ensured = new WeakSet<DatabaseSync>();
 
 export function ensureControlSchema(db: DatabaseSync): void {
   if (ensured.has(db)) return;
+  // A project without a row is in the "shadow" phase: only a take-over that started or finished is recorded.
   db.exec(`CREATE TABLE IF NOT EXISTS file_sync_config(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS file_sync_engines(project_id TEXT PRIMARY KEY, mode TEXT NOT NULL CHECK(mode IN ('syncthing','builtin')), generation INTEGER NOT NULL, updated_at TEXT NOT NULL, origin TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS file_sync_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL, origin TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS file_sync_phases(project_id TEXT PRIMARY KEY, phase TEXT NOT NULL CHECK(phase IN ('syncthing','releasing','bootstrapping','builtin','restoring')), builtin_since TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL, error TEXT);
+    CREATE TABLE IF NOT EXISTS file_sync_phases(project_id TEXT PRIMARY KEY, phase TEXT NOT NULL CHECK(phase IN ('bootstrapping','builtin')), builtin_since TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL, error TEXT);
     CREATE TABLE IF NOT EXISTS file_sync_revision(id INTEGER PRIMARY KEY CHECK(id = 1), value INTEGER NOT NULL)`);
   // Triggers update this row; it is created once and never deleted, so they can never fail a write.
   db.prepare("INSERT OR IGNORE INTO file_sync_revision VALUES (1, 0)").run();
+  // Left by releases that chose a sync engine per project: the table of those choices, and the phases of a project
+  // moving between engines. A project found in one of those is taken over again.
+  db.exec("DROP TABLE IF EXISTS file_sync_engines; DELETE FROM file_sync_phases WHERE phase NOT IN ('bootstrapping','builtin')");
   ensured.add(db);
 }
 
@@ -190,30 +193,12 @@ export function markProjectsIndexed(db: DatabaseSync, projectIds: Iterable<strin
   db.prepare("INSERT INTO file_sync_config VALUES ('indexedProjects', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE value <> excluded.value").run(JSON.stringify(next));
 }
 
-/* Records. Engine records come only from a project's owner and settings records only from their
-   origin (checked by the receiver before it stores them); newer wins, ties broken by origin. */
+/* Records. Settings records come only from their origin (checked by the receiver before it stores
+   them); newer wins, ties broken by origin. */
 
-function newer(a: { generation?: number; updatedAt: string; origin: string }, b: { generation?: number; updatedAt: string; origin: string }): boolean {
-  if ((a.generation ?? 0) !== (b.generation ?? 0)) return (a.generation ?? 0) > (b.generation ?? 0);
+function newer(a: { updatedAt: string; origin: string }, b: { updatedAt: string; origin: string }): boolean {
   if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt;
   return a.origin > b.origin;
-}
-
-interface EngineRow { project_id: string; mode: "syncthing" | "builtin"; generation: number; updated_at: string; origin: string }
-const engineFromRow = (row: EngineRow): EngineRecord => ({ projectId: row.project_id, mode: row.mode, generation: row.generation, updatedAt: row.updated_at, origin: row.origin });
-
-export function listEngineRecords(db: DatabaseSync): EngineRecord[] {
-  ensureControlSchema(db);
-  return (db.prepare("SELECT * FROM file_sync_engines ORDER BY project_id").all() as unknown as EngineRow[]).map(engineFromRow);
-}
-
-/** Stores the record if it is newer than the one held; returns whether it was. */
-export function saveEngineRecord(db: DatabaseSync, record: EngineRecord): boolean {
-  ensureControlSchema(db);
-  const held = db.prepare("SELECT * FROM file_sync_engines WHERE project_id = ?").get(record.projectId) as EngineRow | undefined;
-  if (held && !newer(record, engineFromRow(held))) return false;
-  db.prepare("INSERT OR REPLACE INTO file_sync_engines VALUES (?, ?, ?, ?, ?)").run(record.projectId, record.mode, record.generation, record.updatedAt, record.origin);
-  return true;
 }
 
 const ruleSettingsSchema = z.object({
@@ -255,9 +240,10 @@ export function listPhases(db: DatabaseSync): Map<string, PhaseRecord> {
   }));
 }
 
-/** Keeps the recorded builtin_since unless a new one is given. */
+/** Keeps the recorded builtin_since unless a new one is given. "shadow" is recorded as no row at all. */
 export function setPhase(db: DatabaseSync, projectId: string, phase: Phase, options: { builtinSince?: Record<string, number>; error?: string | null } = {}): void {
   ensureControlSchema(db);
+  if (phase === "shadow") { db.prepare("DELETE FROM file_sync_phases WHERE project_id = ?").run(projectId); return; }
   const held = db.prepare("SELECT builtin_since FROM file_sync_phases WHERE project_id = ?").get(projectId) as { builtin_since: string } | undefined;
   const builtinSince = options.builtinSince ? JSON.stringify(options.builtinSince) : held?.builtin_since ?? "{}";
   db.prepare("INSERT OR REPLACE INTO file_sync_phases VALUES (?, ?, ?, ?, ?)").run(projectId, phase, builtinSince, new Date().toISOString(), options.error ?? null);
@@ -266,18 +252,7 @@ export function setPhase(db: DatabaseSync, projectId: string, phase: Phase, opti
 /** This node syncs (or is taking over) at least one project. */
 export function holdsEngineProjects(db: DatabaseSync): boolean {
   ensureControlSchema(db);
-  if (db.prepare("SELECT 1 FROM file_sync_phases WHERE phase <> 'syncthing' LIMIT 1").get() !== undefined) return true;
-  // cutover-engine (P5): so does a project this node owns and moved to built-in sync, though its own phase has not moved
-  // yet: its peers learn of the move, and later of a move back, only from this node's engine.
-  try {
-    return db.prepare("SELECT 1 FROM file_sync_engines e JOIN cluster_node n ON n.id = e.origin WHERE e.mode = 'builtin' LIMIT 1").get() !== undefined;
-  } catch { return false; }
-}
-
-export function engineRecordOf(db: DatabaseSync, projectId: string): EngineRecord | undefined {
-  ensureControlSchema(db);
-  const row = db.prepare("SELECT * FROM file_sync_engines WHERE project_id = ?").get(projectId) as EngineRow | undefined;
-  return row ? engineFromRow(row) : undefined;
+  return db.prepare("SELECT 1 FROM file_sync_phases LIMIT 1").get() !== undefined;
 }
 
 export function phaseOf(db: DatabaseSync, projectId: string): PhaseRecord | undefined {
@@ -320,7 +295,6 @@ const WATCHED: readonly Watched[] = [
   // A lease renewal keeps its epoch; a new process's first heartbeat, a connect and a disconnect do not.
   { table: "relay_sharing_live", update: "UPDATE OF epoch" },
   { table: "file_sync_config" },
-  { table: "file_sync_engines" },
   { table: "file_sync_settings" },
   { table: "file_sync_phases" },
   // Multi-user mode decides apply's group bits (configure's multiUser): turning it on must reach the worker at once.

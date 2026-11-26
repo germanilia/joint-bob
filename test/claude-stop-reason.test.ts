@@ -14,7 +14,7 @@ test("Claude rechecks permission to start after asynchronous conversation setup"
   const executable = path.join(root, "claude-fake");
   await writeFile(executable, "#!/bin/sh\ncat >/dev/null\necho '{\"type\":\"result\",\"is_error\":false}'\n");
   await chmod(executable, 0o755);
-  updateSettings({ claude: { executable, configPath: path.join(root, "config"), sessionPath: path.join(root, "sessions") }, syncthing: { endpoint: "" } });
+  updateSettings({ claude: { executable, configPath: path.join(root, "config"), sessionPath: path.join(root, "sessions") } });
   const project = await addProject(`start-check-${Date.now()}`, path.join(root, "project"), { writeInstructions: false });
   const result = await runClaudeConversationPrompt({
     cwd: project.path, projectId: project.id, sessionId: crypto.randomUUID(), prompt: "hello", onEvent: () => {},

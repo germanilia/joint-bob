@@ -10,7 +10,6 @@ import type { FileSyncProject } from "../src/file-sync/adoption.js";
 import type { FileSyncStatusAnswer } from "../src/file-sync/index.js";
 import type { PeerShareStatus, ShareStatus } from "../src/file-sync/protocol.js";
 import { api, freePort, seedDevEnvironment, signIn, startDevNode, stopDevNode, type DevEnvironment, type SeededNode, type SignedIn } from "./dev-nodes.js";
-import { openNodeDatabase } from "../src/node-database.js";
 
 /* Taking a shared project over, end to end on real nodes: two separately seeded one-node environments
    share a project whose folder already holds files on both sides, as a project that another sync tool
@@ -125,7 +124,7 @@ function requestsMade(answer: FileSyncStatusAnswer): number {
 
 function describe(answer: FileSyncStatusAnswer, projectId: string): string {
   return JSON.stringify(answer.shares.filter((share) => share.projectId === projectId).map((share) => ({
-    kind: share.kind, state: share.state, phase: share.phase, engine: share.engine, message: share.message, need: share.need, blocked: share.blocked, errors: share.errors, builtinSince: share.builtinSince,
+    kind: share.kind, state: share.state, phase: share.phase, message: share.message, need: share.need, blocked: share.blocked, errors: share.errors, builtinSince: share.builtinSince,
     peers: share.peers.map((peer) => ({ caughtUp: peer.caughtUp, cursor: peer.cursor, peerMaxSeq: peer.peerMaxSeq, differences: peer.differences, builtinSince: peer.builtinSince })),
   })));
 }
@@ -182,17 +181,10 @@ function inOrder(phases: readonly string[]): boolean {
   return phases.every((phase, index) => ORDER.includes(phase) && (index === 0 || ORDER.indexOf(phase) > ORDER.indexOf(phases[index - 1])));
 }
 
-/** The owner's word for machines on older releases, as each node's node.db holds it. */
-function engineRecords(node: SeededNode, projectId: string): Array<{ mode: string; generation: number; origin: string }> {
-  const db = openNodeDatabase(path.join(node.dataDir, "node.db"), { readOnly: true });
-  try { return (db.prepare("SELECT mode, generation, origin FROM file_sync_engines WHERE project_id = ?").all(projectId) as Array<{ mode: string; generation: number; origin: string }>).map((row) => ({ ...row })); }
-  finally { db.close(); }
-}
-
 async function startSide(side: Side): Promise<void> {
   side.child = await startDevNode(side.env, side.node, side.extraEnv);
   for (const stream of [side.child.stdout!, side.child.stderr!]) {
-    stream.on("data", (chunk: Buffer) => side.lines.push(...String(chunk).split("\n").filter((line) => /File (sync|scan)|Syncthing/i.test(line)).map((line) => `${side.label}: ${line}`)));
+    stream.on("data", (chunk: Buffer) => side.lines.push(...String(chunk).split("\n").filter((line) => /File (sync|scan)/i.test(line)).map((line) => `${side.label}: ${line}`)));
   }
   side.session = await signIn(side.env, side.node);
 }
@@ -305,14 +297,9 @@ async function runPair(t: TestContext, mode: "direct" | "relay", options: { unre
     for (const [index, answer] of [afterA, afterB].entries()) {
       for (const kind of KINDS) {
         const share = shareOf(answer, projectId, kind);
-        assert.deepEqual([typeof share?.builtinSince, share?.engine, share?.phase], ["number", "builtin", "builtin"], `${sides[index].label} took over its ${kind}: ${describe(answer, projectId)}`);
+        assert.deepEqual([typeof share?.builtinSince, share?.phase], ["number", "builtin"], `${sides[index].label} took over its ${kind}: ${describe(answer, projectId)}`);
       }
     }
-    // The owner wrote the record machines on older releases follow. The other node wrote none of its own: what it holds,
-    // once the owner's has reached it, is the owner's.
-    const owned = [{ mode: "builtin", generation: 1, origin: a.node.nodeId }];
-    assert.deepEqual(engineRecords(a.node, projectId), owned);
-    assert.deepEqual(engineRecords(b.node, projectId).filter((record) => record.origin !== a.node.nodeId), []);
     const shown = await api<{ projects: Array<{ id: string; syncStatus?: { state: string; engine?: string } }> }>(b.node, b.session, "GET", "/projects?syncStatus=true");
     assert.deepEqual(shown.body.projects.find((candidate) => candidate.id === projectId)?.syncStatus, { state: "synced", remainingFiles: 0, remainingBytes: 0, message: "Files are up to date", engine: "builtin" });
 

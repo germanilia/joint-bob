@@ -3,7 +3,7 @@ import { DIRECTORY, FILE, SYMLINK, type IndexEntry } from "./types.js";
 import { canonicalVector, compareVectors, mergeVectors, vectorsEqual } from "./vectors.js";
 
 /* What a node does about one path given its own entry and the version its peers hold. Conflicts
-   are resolved on the losing side, as Syncthing does: the winner does nothing, the loser keeps its
+   are resolved on the losing side: the winner does nothing, the loser keeps its
    content as a conflict copy named from the losing version, so every node holding that loser makes
    the same copy and the copies merge instead of multiplying. */
 
@@ -160,7 +160,7 @@ function base32(bytes: Uint8Array): string {
   return bits ? output + BASE32[(buffer << (5 - bits)) & 31] : output;
 }
 
-/** Syncthing's short device id, derived from a node id: 7 base32 characters of sha256(nodeId). */
+/** The short id that names a node in a conflict copy: 7 base32 characters of sha256(nodeId). */
 export function shortNodeId(nodeId: string): string {
   // 5 bytes are exactly 8 base32 characters, so these 7 equal the start of the full hash's encoding.
   return base32(createHash("sha256").update(nodeId, "utf8").digest().subarray(0, 5)).slice(0, 7);

@@ -4,11 +4,10 @@ import { systemClock, type Clock } from "./types.js";
 
 /* auto-transition: with every shared project compared by default, the first full index of all of
    them at once was too much for one machine. Projects never indexed here join the worker's shares
-   one at a time, smallest first by Syncthing's file count (by name when Syncthing does not say);
-   the next one goes in only once main's event loop is calm, or after a few busy windows anyway. A
-   project indexed once (or moved by built-in sync, or switched by its owner) joins at once at every
-   later start. Nothing polls: the queue moves on the current project's share reports, plus one
-   one-shot timer at a time while main is busy. */
+   one at a time, by name; the next one goes in only once main's event loop is calm, or after a few
+   busy windows anyway. A project indexed once (or being taken over) joins at once at every later
+   start. Nothing polls: the queue moves on the current project's share reports, plus one one-shot
+   timer at a time while main is busy. */
 
 export interface FirstIndexDeps {
   /** Projects whose first index finished here (node.db). */
@@ -38,8 +37,6 @@ function loopUtilization(): () => number {
 
 export class FirstIndexQueue {
   private current?: string;
-  /** Syncthing's file count per project, where it said. */
-  private counts = new Map<string, number>();
   private candidates: string[] = [];
   private waiting?: { cancel(): void };
   /** The current project's shares, as last derived. */
@@ -48,11 +45,9 @@ export class FirstIndexQueue {
 
   constructor(private readonly deps: FirstIndexDeps) {}
 
-  setCounts(counts: ReadonlyMap<string, number>): void { this.counts = new Map(counts); }
-
   /**
-   * The shares the worker gets now: those of projects `always` admits (indexed, past Syncthing,
-   * switched) and of the one project indexing. `derived` is every share the project list allows.
+   * The shares the worker gets now: those of projects `always` admits (indexed, or being taken
+   * over) and of the one project indexing. `derived` is every share the project list allows.
    */
   admit(derived: readonly ShareSpec[], always: (projectId: string) => boolean): ShareSpec[] {
     const indexed = this.deps.indexed();
@@ -84,10 +79,9 @@ export class FirstIndexQueue {
 
   stop(): void { this.stopped = true; this.waiting?.cancel(); this.waiting = undefined; }
 
-  /** Smallest known first, then by name. */
+  /** By name. */
   private pick(pending: readonly string[]): string {
-    return [...pending].sort((a, b) => (this.counts.get(a) ?? Infinity) - (this.counts.get(b) ?? Infinity)
-      || this.deps.name(a).localeCompare(this.deps.name(b)) || a.localeCompare(b))[0];
+    return [...pending].sort((a, b) => this.deps.name(a).localeCompare(this.deps.name(b)) || a.localeCompare(b))[0];
   }
 
   /** Runs `then` once main's event loop was calm over one window; a busy window waits for another, up to BUSY_WINDOWS of them. */

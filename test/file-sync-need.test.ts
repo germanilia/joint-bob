@@ -58,7 +58,7 @@ function engine(t: TestContext, hooks: { yieldNow?(): Promise<void> } = {}) {
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
   db.writeTx(() => db.insertShare({ share: SHARE, projectId: "p1", kind: "project", root: dir, indexId: "gen1" }));
   const state = { served: true };
-  const share: NeedShare = { key: SHARE, phase: "syncthing", rulesHash: "h", peers: () => ["node-a"], ignored: () => false };
+  const share: NeedShare = { key: SHARE, phase: "shadow", rulesHash: "h", peers: () => ["node-a"], ignored: () => false };
   const need = new NeedEngine({
     db, nodeId: "node-b", clock: { now: () => Date.now(), setTimeout: () => ({ cancel() {} }) }, settleMs: 1000,
     share: (key) => state.served && key === SHARE ? share : undefined,
@@ -423,7 +423,7 @@ test("rule and peer changes recompute need from the stored rows, without a pull"
 });
 
 test("a share in shadow mode never gets need rows; leaving builtin drops them", async (t) => {
-  const q = queue(t, { phase: "syncthing", peers: ["p1"] });
+  const q = queue(t, { phase: "shadow", peers: ["p1"] });
   await q.pull("p1", [{ path: "a.txt", sha256: SHA_X, version: { p1: 1 } }, { path: "b.txt", sha256: SHA_Y, version: { p1: 1 } }]);
   q.local({ path: "c.txt", sha256: SHA_Z, version: { "node-b": 1 } });
   assert.equal(q.db.needCount(KEY), 0);
@@ -433,7 +433,7 @@ test("a share in shadow mode never gets need rows; leaving builtin drops them", 
   q.need.syncNeed(KEY);
   await q.need.idle();
   assert.equal(q.db.needCount(KEY), 2);
-  q.state.phase = "restoring";
+  q.state.phase = "shadow";
   q.need.syncNeed(KEY);
   assert.equal(q.db.needCount(KEY), 0);
   await q.pull("p1", [{ path: "d.txt", sha256: SHA_W, version: { p1: 2 } }]);
