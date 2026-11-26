@@ -49,7 +49,7 @@
   body.ws-desktop:not(.focus-ui) #commandStrip { align-items: center; gap: 12px; }
   body.ws-desktop:not(.focus-ui) #commandStrip::before { content: "Type / for commands · @ for files"; color: var(--muted); font-size: 13px; }
   body.ws-desktop:not(.focus-ui) #commandStrip > #chatResourcesButton { margin-left: auto; font-size: 13px; }
-  body.ws-desktop:not(.focus-ui) #messageInput { font-size: 15.5px; }
+  body.ws-desktop:not(.focus-ui) :is(#messageInput, .composer-measure) { font-size: 15.5px; }
 
   /* ---------- the details ---------- */
   body.ws-desktop:not(.focus-ui) #activityPanel .activity-tabs button { font-size: 14px; }

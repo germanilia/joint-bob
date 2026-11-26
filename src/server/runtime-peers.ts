@@ -94,7 +94,7 @@ export function dispatchSignedRuntime(request:Request,response:Response,next:Nex
  const prefix='/api/cluster/v2/runtime/';
  if(!request.path.startsWith(prefix)){next();return;}
  const suffix=request.path.slice(prefix.length),target='/cluster/'+suffix;
- if(!/^(sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|quick-notes\/prepare$|background-tasks$|workspace-cleanup\/(?:check|admin)$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
+ if(!/^(sessions\/|browser\/|git\/|projects\/presence$|project-file|project-files$|project-instructions-content$|quick-notes\/prepare$|background-tasks$|workspace-cleanup\/(?:check|admin)$|control-center\/(?:bob\/(?:action|reply|send)|live|summarize)$|resources\/(?:inventory|manage-inventory|activation(?:\/(?:item|bulk))?)$)/.test(suffix)||!machineRoutes.has(`${request.method} ${target}`)){
   response.status(404).json({error:'Unsupported signed runtime route'});return;
  }
  request.url=request.url.replace(prefix,'/api/cluster/');next();
