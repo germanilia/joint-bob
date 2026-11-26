@@ -156,6 +156,22 @@ export async function initializeAntigravitySession(options: HarnessOpenOptions, 
   return file;
 }
 
+// Every listing of every project used to read and parse every Antigravity transcript on the machine
+// (95 files, 31 MB on the homeserver, about 17 times a minute) just to learn each one's folder. Keep
+// what a listing needs until the file changes.
+type ListedFacts = { mtimeMs: number; size: number; id: string; cwd: string; summary: SessionSummary | null };
+const listedFactsCache = new Map<string, ListedFacts>();
+
+async function listedFacts(file: string): Promise<ListedFacts> {
+  const fileStat = await stat(file);
+  const cached = listedFactsCache.get(file);
+  if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) return cached;
+  const session = await readAntigravitySession(file);
+  const facts = { mtimeMs: fileStat.mtimeMs, size: fileStat.size, id: session.id, cwd: session.cwd, summary: summary(file, session) };
+  listedFactsCache.set(file, facts);
+  return facts;
+}
+
 async function sessionFiles(project: HarnessProject): Promise<string[]> {
   let entries;
   try { entries = await readdir(root(), { withFileTypes: true }); }
@@ -166,9 +182,9 @@ async function sessionFiles(project: HarnessProject): Promise<string[]> {
   const includedIds = new Set(project.includedSessionIds ?? []);
   const candidates = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl") && safeId.test(path.basename(entry.name, ".jsonl"))).map((entry) => path.join(root(), entry.name));
   const summaries = await mapWithConcurrency(candidates, 8, async (file) => {
-    const session = await readAntigravitySession(file);
-    if (!cwdSet.has(path.resolve(session.cwd))) return null;
-    if (cutoff && !included.has(path.resolve(file)) && !includedIds.has(`antigravity:${session.id}`) && (await stat(file)).mtimeMs < cutoff) return null;
+    const facts = await listedFacts(file);
+    if (!cwdSet.has(path.resolve(facts.cwd))) return null;
+    if (cutoff && !included.has(path.resolve(file)) && !includedIds.has(`antigravity:${facts.id}`) && facts.mtimeMs < cutoff) return null;
     return file;
   });
   return summaries.filter((file): file is string => file !== null);
@@ -185,7 +201,7 @@ function summary(file: string, session: AntigravityStoredSession): SessionSummar
 export async function listAntigravitySessionFiles(project: HarnessProject): Promise<string[]> { return sessionFiles(project); }
 
 export async function listAntigravitySessions(project: HarnessProject): Promise<SessionSummary[]> {
-  const sessions = await mapWithConcurrency(await sessionFiles(project), 8, async (file) => summary(file, await readAntigravitySession(file)));
+  const sessions = await mapWithConcurrency(await sessionFiles(project), 8, async (file) => (await listedFacts(file)).summary);
   return sessions.filter((session): session is SessionSummary => session !== null);
 }
 

@@ -1,5 +1,5 @@
 import { allPendingGuardianReviews } from "../guardian/reviews.js";
-import { listQueuedPrompts } from "../prompt-queue.js";
+import { listQueuedPrompts, projectHasQueuedPrompts } from "../prompt-queue.js";
 import { listTurnFailures } from "../turn-failures.js";
 import { worktreeConversations, type ProjectWorktree } from "../project-worktrees.js";
 import { recordedConversationWorktrees } from "../conversation-records.js";
@@ -127,9 +127,11 @@ export async function listProjectSessionsWithReviewState(project: ProjectRecord,
   })));
   const { listedSessions, reviewDetails } = await measureOperation("sessions.decoration_review", () => {
     const waitingForGuardian = new Set(allPendingGuardianReviews().filter((review) => review.projectId === project.id).map((review) => review.conversationId));
+    // Five queries per conversation on every listing, for a table that is nearly always empty.
+    const projectHasQueue = projectHasQueuedPrompts(project.id);
     const listedSessions = applyConversationWork(sessions.map((session) => {
       const shared = findHarnessSession(project.id, session.harnessId, session.id);
-      const queued = listQueuedPrompts(`${project.id}:${session.conversationId ?? session.id}`).filter((prompt) => !prompt.systemEventId);
+      const queued = !projectHasQueue ? [] : listQueuedPrompts(`${project.id}:${session.conversationId ?? session.id}`).filter((prompt) => !prompt.systemEventId);
       const failure = queued.length ? listTurnFailures(session.harnessId, session.id).at(-1) : undefined;
       const promptStartError = failure && queued.some((prompt) => prompt.createdAt <= failure.failedAt) ? failure.error : undefined;
       const agentId = session.harnessId;

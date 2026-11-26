@@ -194,6 +194,14 @@ export function listPendingSystemQueues(limit = 100): Array<{ queueKey: string; 
   } finally { if (owned) db.close(); }
 }
 
+/** Whether any conversation of this project has queued prompts: lets a listing skip the per-conversation lookups. */
+export function projectHasQueuedPrompts(projectId: string): boolean {
+  const db = queueDatabase();
+  const project = resolveProjectAlias(db, projectId);
+  // Every key listQueuedPrompts can read starts with "<resolved project>:"; ";" is the character after ":".
+  return Boolean(db.prepare("SELECT 1 FROM queued_prompts WHERE queue_key >= ? AND queue_key < ? LIMIT 1").get(`${project}:`, `${project};`));
+}
+
 export function listQueuedPrompts(queueKey: string): Array<QueuedPrompt & { createdAt: string }> {
   return (queueDatabase().prepare("SELECT prompt, created_at FROM queued_prompts WHERE queue_key = ? ORDER BY sequence, id").all(logicalQueueKey(queueKey)) as Array<{ prompt: string; created_at: string }>).map((row) => ({ ...promptSchema.parse(JSON.parse(row.prompt)), createdAt: row.created_at }));
 }

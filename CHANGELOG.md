@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.340.14 — 2026-11-26
+
+- **Speed:** Conversation lists no longer re-read every Google Antigravity transcript on the machine each time they are built; each file is read again only after it changes. On the homeserver that was 31 MB read and parsed about 17 times a minute.
+- **Speed:** Conversation lists skip the queued-prompt lookups (five database queries per conversation) for projects with nothing queued.
+
 ## 2.340.13 — 2026-11-26
 
 - **Model routing:** The classifier now judges the latest message in the light of the conversation, and the task categories describe everyday use (status questions, shipping work, approving a plan, troubleshooting). Short replies such as "yes" or "do both" are routed instead of falling back to the conversation's default model.
