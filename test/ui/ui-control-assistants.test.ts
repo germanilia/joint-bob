@@ -20,6 +20,10 @@ async function mockRoutes(page: Page, board: unknown): Promise<void> {
       const method = (args[1]?.method ?? 'GET').toUpperCase();
       if (path === '/api/control-center/board') return reply(${JSON.stringify(board)});
       if (path === '/api/control-center/assistants' && method === 'GET') return reply({ assistants: window.__assistants });
+      if (path === '/api/personal-assistants/w' && method === 'DELETE') {
+        window.__assistants = window.__assistants.filter((card) => card.id !== 'w');
+        return new Response(null, { status: 204 });
+      }
       let found = /^\\/api\\/control-center\\/assistants\\/([^/]+)\\/may-ask$/.exec(path);
       if (found && method === 'PUT') {
         const { enabled } = JSON.parse(args[1].body);
@@ -134,6 +138,18 @@ test("the Assistants tab lists the person's assistants with what they have, the 
   });
   await page.waitForFunction(() => document.querySelector('[data-name="Work assistant"]')?.getAttribute("data-state") === "busy");
   assert.match(await work.getByTestId("control-assistant-where").innerText(), /Mac · busy/);
+});
+
+test("deleting a local assistant shows confirmation rather than an error", { timeout: 90_000 }, async (t) => {
+  const page = await open(t);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("control-tab-assistants").click();
+  const work = card(page, "Work assistant");
+  await work.getByTestId("control-assistant-delete").click();
+  await page.getByTestId("confirm-accept-button").click();
+  await work.waitFor({ state: "detached" });
+  assert.equal(await page.locator('.toast-error').filter({ hasText: "toast.info" }).count(), 0);
+  await page.getByRole("status").filter({ hasText: "Deleted Work assistant" }).waitFor({ timeout: 3_000 });
 });
 
 test("the cards fit the height and page instead of scrolling", { timeout: 240_000 }, async (t) => {

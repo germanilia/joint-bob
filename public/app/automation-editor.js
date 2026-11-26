@@ -274,7 +274,11 @@ export async function openAutomationEditor({ item = null, projectId = null, node
   active?.remove();
   const element = makeNode("section", "automation-editor");
   element.dataset.testid = "automation-editor";
-  element.append(makeNode("p", "automation-hint", "Loading…"));
+  const loadPanel = makeNode("div", "automation-panels automation-load");
+  const loadStatus = makeNode("p", "automation-hint", "Loading automation settings…");
+  loadStatus.setAttribute("role", "status");
+  loadPanel.append(makeButton("‹ Automations", "automation-back", closeAutomationEditor), loadStatus);
+  element.append(loadPanel);
   active = element;
   host.classList.add("editing");
   host.append(element);
@@ -306,21 +310,23 @@ export async function openAutomationEditor({ item = null, projectId = null, node
     return current;
   }
 
-  async function loadOwners() {
-    const { owners } = await api(`/api/automations/owners?projectId=${encodeURIComponent(state.projectId)}`);
+  async function loadOwners(signal) {
+    const { owners } = await api(`/api/automations/owners?projectId=${encodeURIComponent(state.projectId)}`, { signal });
     state.options = { ...state.options, owners };
   }
   /** Reads what the chosen machine offers: its projects, models and accounts. */
   async function loadMachine() {
-    const [list, options, { projects }] = await Promise.all([api(endpoint("")), api(endpoint("/options")), api(endpoint("/projects"))]);
+    const signal = AbortSignal.timeout(20_000);
+    const [list, options, { projects }] = await Promise.all([api(endpoint(""), { signal }), api(endpoint("/options"), { signal }), api(endpoint("/projects"), { signal })]);
     state.projectId ||= projects[0]?.id ?? "";
     state.telegramSenderFields = list.telegramSenderFields;
     state.options = { ...options, projects, owners: state.options.owners };
-    await loadOwners();
+    await loadOwners(signal);
   }
   try { await loadMachine(); } catch (error) {
-    closeAutomationEditor();
-    toast.error(errorText(error));
+    if (active !== element) return;
+    loadStatus.textContent = `Could not load automation settings: ${errorText(error)}`;
+    loadPanel.append(makeButton("Retry", "automation-load-retry", () => openAutomationEditor({ item, projectId, nodeId, target })));
     return;
   }
   if (active !== element) return;

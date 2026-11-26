@@ -4,6 +4,7 @@ import { autoRespondConfigSchema, enableAutoRespond, getAutoRespond, stopAutoRes
 import { runAutoResponder } from "../src/server/auto-respond-run.js";
 import { createProviderProfile, deleteProviderProfile, setProviderProfileShared } from "../src/provider-profiles/store.js";
 import { getClusterNode } from "../src/cluster.js";
+import { createSubscriptionPool } from "../src/provider-profiles/pools.js";
 
 // Profile writes are stamped with this node's identity for twin sync.
 await getClusterNode();
@@ -34,6 +35,27 @@ test("auto reply execution carries the persisted creator and pinned or current a
     else process.env.JOINT_BOB_AUTO_RESPONDER = previous;
     deleteProviderProfile("execution-creator", profile.id);
   }
+});
+
+test("auto replies persist a responder pool and run with it as the creator", async (t) => {
+  const owner = "pool-creator";
+  const profile = createProviderProfile(owner, { label: "Responder", provider: "claude" });
+  const pool = createSubscriptionPool(owner, { name: "Responder pool", profileIds: [profile.id] });
+  const pinned = { ...config, providerPoolId: pool.id };
+  const saved = await enableAutoRespond("profile-test", "pooled", pinned, null, owner);
+  assert.equal((await getAutoRespond("profile-test", "pooled"))?.providerPoolId, pool.id);
+  const previous = process.env.JOINT_BOB_AUTO_RESPONDER;
+  process.env.JOINT_BOB_AUTO_RESPONDER = new URL("./fixtures/auto-respond-profile-context.ts", import.meta.url).href;
+  t.after(() => {
+    if (previous === undefined) delete process.env.JOINT_BOB_AUTO_RESPONDER;
+    else process.env.JOINT_BOB_AUTO_RESPONDER = previous;
+  });
+  const input = { accountIds: ["viewer"], projectId: "profile-test", conversationId: "pooled", cwd: process.cwd(), config: saved, prompt: "test", signal: new AbortController().signal, onStep() {} };
+  const output = await runAutoResponder({ ...input, creatorAccountId: owner });
+  assert.deepEqual(JSON.parse(output), { accountId: owner, profileId: null, poolId: pool.id });
+  await assert.rejects(runAutoResponder({ ...input, creatorAccountId: "viewer" }), /pool/i);
+  assert.throws(() => validateAutoRespondProfile(owner, { ...pinned, harnessId: "kiro" }), /pool/i);
+  assert.throws(() => validateAutoRespondProfile(owner, { ...pinned, providerProfileId: profile.id }), /pool or a profile/i);
 });
 
 test("explicit auto reply profiles persist and reject inaccessible, mismatched or deleted assignments", async () => {

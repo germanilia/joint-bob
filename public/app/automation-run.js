@@ -4,7 +4,7 @@
 import { harnessOption } from "../harness-metadata.js";
 import { card, field, input, segmented, select, switchRow, textarea } from "./automation-trigger.js";
 import { fillModelOptions, fillThinkingOptions, selectedModel } from "./git-reviewer-options.js";
-import { createAutomationPoolPicker, createAutomationProfilePicker } from "./provider-profile-picker.js";
+import { createAutomationPoolPicker } from "./provider-profile-picker.js";
 import { makeNode } from "./relay-ui.js";
 import { state } from "./state.js";
 
@@ -61,7 +61,7 @@ export function createRunTab(ctx) {
   const arThinkingField = field("Responder reasoning", arThinking, "automation-autoreply-reasoning");
   const arGrid = makeNode("div", "atab-grid");
   arGrid.append(field("Responder harness", arHarness, "automation-autoreply-harness"), field("Responder model", arModel, "automation-autoreply-model"), arThinkingField);
-  const arProfile = createAutomationProfilePicker(arThinkingField, "automation-autoreply-profile", () => ctx.api(ctx.endpoint("/profiles")));
+  const arPool = createAutomationPoolPicker(arThinkingField, "automation-autoreply-pool", () => ctx.api(ctx.endpoint("/profiles")));
   const arBody = makeNode("div", "atab-stack");
   arBody.append(arGrid,
     field("Instructions", arInstructions, "automation-autoreply-instructions"),
@@ -179,7 +179,7 @@ export function createRunTab(ctx) {
     arStop.value = saved?.stopInstructions ?? auto.defaults.stopInstructions;
     arLimit.value = saved ? saved.maxResponses ?? "" : auto.defaults.maxResponses;
     arTools.input.checked = saved?.useTools !== false;
-    void arProfile.refresh(saved?.providerProfileId ?? null);
+    void arPool.refresh(saved);
   }
 
   function readAutoReply() {
@@ -190,7 +190,7 @@ export function createRunTab(ctx) {
     if (!instructions) throw new Error("Write instructions for auto reply");
     const { provider, modelId } = selectedModel(arModel);
     return {
-      providerProfileId: arProfile.value(), harnessId: picked.id,
+      ...arPool.value(), harnessId: picked.id,
       provider: provider || picked.configuration?.fixedProvider || picked.defaults.provider, modelId,
       thinkingLevel: arThinking.value, instructions,
       stopInstructions: arStop.value.trim(),
@@ -258,7 +258,7 @@ export function createRunTab(ctx) {
       };
     },
     onShow: syncKind,
-    /** Resolves when the machine's pools and profiles are in, so a save pressed right after a machine change sees them. */
+    /** Resolves when the machine's pools are in, so a save pressed right after a machine change sees them. */
     onNode() {
       renderMachine();
       fillHarnesses(harness.value, model.value, reasoning.value);
@@ -267,7 +267,7 @@ export function createRunTab(ctx) {
       const refreshed = [pool.refresh(ctx.state.item)];
       if (autoReady) {
         fillAutoReplyModels({ ...selectedModel(arModel), thinkingLevel: arThinking.value });
-        refreshed.push(arProfile.refresh(ctx.state.item?.autoRespond?.providerProfileId ?? null));
+        refreshed.push(arPool.refresh(ctx.state.item?.autoRespond));
       }
       return Promise.all(refreshed);
     },

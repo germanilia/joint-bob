@@ -10,6 +10,12 @@ export function recordFailure(failure) {
   if (failures.length > MAX_FAILURES) failures.shift();
 }
 
+// Automatic forwarding does not include the copied report's conversation, response details or local paths.
+export function recentFailedRequestMetadata() {
+  return failures.filter(({ method }) => /^[A-Z]{1,16}$/.test(method))
+    .map(({ method, path, status }) => ({ method, path: path.slice(0, 256), status }));
+}
+
 function describeState() {
   return {
     page: location.origin + location.pathname,

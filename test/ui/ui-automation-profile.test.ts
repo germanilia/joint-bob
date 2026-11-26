@@ -70,4 +70,18 @@ test("automation pool picker defaults to the current pool and restores an explic
   await editorTab(page, "run");
   await pickerLoaded();
   assert.equal(await picker.inputValue(), "");
+
+  // Auto reply has a separate assignment. Selecting it does not change the automation's pool.
+  await page.getByTestId("automation-autoreply-switch").check();
+  await page.getByTestId("automation-autoreply-harness").selectOption("claude");
+  const responderPool = page.getByTestId("automation-autoreply-pool");
+  await responderPool.locator(`option[value="${poolId}"]`).waitFor({ state: "attached", timeout: 5_000 });
+  await responderPool.selectOption(poolId);
+  await saveAutomation(page);
+  await backToList(page);
+  await openAutomationRow(page, "Pool webhook");
+  await editorTab(page, "run");
+  await responderPool.locator(`option[value="${poolId}"]`).waitFor({ state: "attached" });
+  assert.equal(await responderPool.inputValue(), poolId);
+  assert.equal(await picker.inputValue(), "");
 });

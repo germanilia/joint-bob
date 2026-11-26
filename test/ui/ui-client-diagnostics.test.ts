@@ -87,6 +87,40 @@ test("an error alert offers its report: the failed request, its answer, no query
   assert.doesNotMatch(text, /private-query|private-body/);
 });
 
+test("error alerts offer webhook settings without turning on delivery", { timeout: 120_000 }, async (t) => {
+  const destination = "https://errors.example.invalid/hooks/fixture/synthetic-private-token";
+  const { page, environment, node } = await nativeUiFixture(t, () => ({ JOINT_BOB_ERROR_WEBHOOK_URL: destination }));
+  await signIn(page, node.url, environment.username, environment.password);
+  await page.route("**/api/preferences?diagnostic=*", (route) => route.fulfill({ status: 502, json: { error: "Fixture gateway error" } }));
+  const intake = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/client-errors" && response.request().postData()?.includes("Fixture gateway error") === true);
+  await page.evaluate(`(async () => {
+    const { api } = await import("/app/api.js");
+    const { toast } = await import("/app/shell.js");
+    try { await api("/api/preferences?diagnostic=private-query", { method: "PUT", body: '{"privateBody":"private-body"}' }); }
+    catch (error) { toast.error(error.message); }
+  })()`);
+  const toast = page.getByRole("alert").filter({ hasText: "Fixture gateway error" });
+  await toast.getByTestId("toast-error-webhook-setup").click({ timeout: 5_000 });
+  const sent = await intake;
+  assert.equal(sent.status(), 202);
+  const payload = sent.request().postDataJSON();
+  assert.ok(payload.failedRequests.some((failure: { method: string; path: string; status: number }) => failure.method === "PUT" && failure.path === "/api/preferences" && failure.status === 502));
+  assert.doesNotMatch(JSON.stringify(payload), /private-query|private-body/);
+  const settings = page.getByTestId("error-webhook-settings");
+  await settings.getByText("https://errors.example.invalid", { exact: false }).waitFor();
+  assert.equal(await page.getByTestId("error-webhook-enabled").isChecked(), false);
+  assert.equal(await page.getByTestId("error-webhook-url").inputValue(), "");
+  assert.doesNotMatch(await settings.innerText(), /synthetic-private-token/);
+  const saved = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === "/api/error-reporting/webhook");
+  await page.getByTestId("error-webhook-enabled").check();
+  await page.getByTestId("error-webhook-save").click();
+  assert.deepEqual(await (await saved).json(), { enabled: true, destination: "default", origin: "https://errors.example.invalid" });
+  const disabled = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === "/api/error-reporting/webhook");
+  await page.getByTestId("error-webhook-enabled").uncheck();
+  await page.getByTestId("error-webhook-save").click();
+  assert.equal((await (await disabled).json()).enabled, false);
+});
+
 test("agent switch waits for server confirmation before changing conversation identity", { timeout: 120_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   await signIn(page, node.url, environment.username, environment.password);

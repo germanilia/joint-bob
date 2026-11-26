@@ -2,6 +2,7 @@ import os from "node:os";
 import { maskLogText } from "../scripts/log-masking.mjs";
 import { z } from "zod";
 import { appVersion } from "./changelog.js";
+import { deliverErrorWebhook, errorWebhookDestination } from "./error-webhook.js";
 import { ntfyTopicName } from "./ntfy-admin.js";
 import { getNtfyService } from "./ntfy.js";
 import { publishNtfyMessage, savedNtfyServer } from "./ntfy-publish.js";
@@ -71,12 +72,13 @@ export function updateErrorReportingSettings(input: unknown): ErrorReportingSett
     }
   }
   save(settingsDatabase(), SETTINGS_KEY, JSON.stringify(settings));
-  throttles.clear();
+  ntfyThrottles.clear();
   return settings;
 }
 
 interface Throttle { windowStartedAt: number; sent: number; withheld: number; recent: Map<string, number> }
-const throttles = new Map<ErrorChannel, Throttle>();
+const ntfyThrottles = new Map<ErrorChannel, Throttle>();
+const webhookThrottles = new Map<ErrorChannel, Throttle>();
 
 /** Errors that differ only in ids, counts or ports are one error. */
 function errorSignature(summary: string): string {
@@ -84,7 +86,7 @@ function errorSignature(summary: string): string {
 }
 
 /** Counts this report against its channel's window; false means it is withheld. */
-function admit(channel: ErrorChannel, summary: string, now: number): { admitted: boolean; withheld: number } {
+function admit(throttles: Map<ErrorChannel, Throttle>, channel: ErrorChannel, summary: string, now: number): { admitted: boolean; withheld: number } {
   let throttle = throttles.get(channel);
   if (!throttle || now - throttle.windowStartedAt >= REPORT_WINDOW_MS) {
     throttle = { windowStartedAt: now, sent: 0, withheld: throttle?.withheld ?? 0, recent: throttle?.recent ?? new Map() };
@@ -108,15 +110,44 @@ export interface ErrorReport {
   detail?: string;
   /** Where the error came from: a page URL, a route, a component. */
   source?: string;
+  /** Preserve the original browser source in ntfy; the webhook gets only the page path. */
+  ntfySource?: string;
+  /** Toast errors are new to webhook reporting; do not increase traffic to existing ntfy topics. */
+  webhookOnly?: boolean;
 }
 
-/** Publishes one error to the channel's ntfy topic. Never throws; a failed delivery is logged as a warning. */
+function maskDiagnostic(text: string): string {
+  return maskLogText(text).replace(/\/hooks\/[^\s"'<>?#)]+/gi, "/hooks/***")
+    .replace(/(https?:\/\/[^\s"'<>?#)]+)[?#][^\s"'<>)]*/gi, "$1");
+}
+
+/** Publishes to each enabled destination. A failed delivery never becomes another error report. */
 export async function reportError(channel: ErrorChannel, report: ErrorReport, now = Date.now()): Promise<boolean> {
-  report = { summary: maskLogText(report.summary), ...(report.detail ? { detail: maskLogText(report.detail) } : {}), ...(report.source ? { source: maskLogText(report.source) } : {}) };
   try {
-    const destination = errorDestination(channel);
-    if (!destination) return false;
-    const { admitted, withheld } = admit(channel, report.summary, now);
+    const webhook = errorWebhookDestination();
+    const destination = report.webhookOnly ? null : errorDestination(channel);
+    if (!webhook && !destination) return false;
+    const { summary, detail, source, ntfySource } = report;
+    const safe = { summary: maskDiagnostic(summary), ...(detail ? { detail: maskDiagnostic(detail) } : {}), ...(source ? { source: maskDiagnostic(source) } : {}) };
+    const deliveries: Promise<boolean>[] = [];
+    if (destination) deliveries.push(reportNtfy(channel, destination, ntfySource ? { ...safe, source: maskDiagnostic(ntfySource) } : safe, now));
+    if (webhook) {
+      const { admitted, withheld } = admit(webhookThrottles, channel, safe.summary, now);
+      if (admitted) deliveries.push(deliverErrorWebhook(webhook, { ...safe, channel, withheld, node: os.hostname(), version: appVersion(), reportedAt: new Date(now).toISOString() }).then(() => true, () => {
+        console.warn(`Could not forward a ${channel} error to the configured webhook`);
+        return false;
+      }));
+    }
+    return (await Promise.all(deliveries)).some(Boolean);
+  } catch {
+    console.warn(`Could not prepare a ${channel} error report`);
+    return false;
+  }
+}
+
+async function reportNtfy(channel: ErrorChannel, destination: { serviceId: string; topic: string }, report: ErrorReport, now: number): Promise<boolean> {
+  try {
+    const { admitted, withheld } = admit(ntfyThrottles, channel, report.summary, now);
     if (!admitted) return false;
     const lines = [
       report.summary,

@@ -186,9 +186,10 @@ function assertAutomationPeerScope(db: Awaited<ReturnType<typeof clusterV2Databa
   if (input?.target.kind === "assistant") throw new WebhookError(403, "Assistant webhooks stay on their assistant's machine");
   if (input?.secretAccountIds.some(id => !scope.secrets.has(id))) throw new WebhookError(403, "Selected secrets are not attached to a shared project");
   if (input?.providerProfileId && (!creatorAccountId || !listAccessibleProviderProfiles(creatorAccountId, "automation").some(profile => profile.id === input.providerProfileId && profile.shared))) throw new WebhookError(403, "Select a shared automation profile on this machine");
-  if (input?.providerPoolId) {
-    validateAutomationAssignment({ ...input, creatorAccountId });
-    const pool = getSubscriptionPool(creatorAccountId!, input.providerPoolId);
+  for (const assignment of [input, input?.autoRespond]) {
+    if (!assignment?.providerPoolId) continue;
+    validateAutomationAssignment({ ...assignment, creatorAccountId });
+    const pool = getSubscriptionPool(creatorAccountId!, assignment.providerPoolId);
     if (!poolCandidates(pool, "claude").every(profile => profile.shared)) throw new WebhookError(403, "Select a pool of shared automation profiles on this machine");
   }
   if (command.action === "skill-inventory" || command.action === "skill-import-existing") throw new WebhookError(403, "Machine-local skill imports require a trusted twin; upload a skill or import it from Git instead");
@@ -206,7 +207,6 @@ async function checkSchedule(input: WebhookInput, ownerNodeId: string): Promise<
   cronInputSchema.parse(cronInputOf(input, ownerNodeId, engine));
   if (input.autoRespond) {
     if (!input.creatorAccountId) throw new WebhookError(400, "Sign in to configure auto reply");
-    validateAutoRespondProfile(input.creatorAccountId, input.autoRespond);
     const runtime = await getHarnessRuntime(input.autoRespond.harnessId as HarnessId);
     await runtime.validateSettings({ provider: input.autoRespond.provider, modelId: input.autoRespond.modelId, reasoning: input.autoRespond.thinkingLevel });
   }
@@ -311,6 +311,7 @@ async function manage(command: Command, scope?: AutomationPeerScope): Promise<un
   if (command.action === "install-transfer") {
     const input = command.bundle.input;
     validateAutomationAssignment(input);
+    if (input.autoRespond) validateAutoRespondProfile(input.creatorAccountId ?? null, input.autoRespond);
     await checkTarget(input);
     if (input.providerProfileId) {
       if (!input.creatorAccountId) throw new WebhookError(400, "Sign in to select a profile");
@@ -332,6 +333,7 @@ async function manage(command: Command, scope?: AutomationPeerScope): Promise<un
     command.input.creatorAccountId = existing?.creatorAccountId ?? command.input.creatorAccountId ?? null;
     if (command.input.providerProfileId && !command.input.creatorAccountId) throw new WebhookError(400, "Sign in to select a profile");
     validateAutomationAssignment(command.input);
+    if (command.input.autoRespond) validateAutoRespondProfile(command.input.creatorAccountId, command.input.autoRespond);
     command.input.providerProfileId ??= null;
     if (command.input.providerProfileId) accessibleProviderProfile(command.input.creatorAccountId!, command.input.providerProfileId, "automation");
     await checkTarget(command.input);

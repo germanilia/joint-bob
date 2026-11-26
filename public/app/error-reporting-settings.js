@@ -1,5 +1,6 @@
 // Settings → Notifications → Send errors to ntfy. Saved as it changes, node-local.
 import { api } from "./api.js";
+import { isNodeAdmin } from "./node-admin.js";
 import { toast } from "./shell.js";
 import { autosaveFields, invalidSetting, settingsAutosave } from "./settings-autosave.js";
 
@@ -57,6 +58,7 @@ export function syncErrorReportingServices(list) {
 }
 
 export async function loadErrorReportingSettings() {
+  if (isNodeAdmin()) void changeWebhook();
   try { fill(await api("/api/error-reporting")); } catch (error) { toast.error(error.message); }
 }
 
@@ -87,3 +89,39 @@ settingsAutosave().channel("error-reporting", saveErrorReporting);
 autosaveFields(field("errorReportingEnabled").closest("fieldset"), "error-reporting", { accept: (target) => target.matches("input, select") });
 // The button is hidden: error reporting saves as it changes. It stays for anything that presses it.
 saveButton.addEventListener("click", () => { settingsAutosave().schedule("error-reporting", 0); });
+
+const webhookEnabled = field("errorWebhookEnabled");
+const webhookUrl = field("errorWebhookUrl");
+const webhookSave = field("errorWebhookSave");
+const webhookReset = field("errorWebhookReset");
+const webhookStatus = field("errorWebhookStatus");
+const webhookDestination = field("errorWebhookDestination");
+let webhookBusy = false;
+let webhookLoaded = false;
+
+async function changeWebhook(input) {
+  if (webhookBusy) return;
+  webhookBusy = true;
+  for (const control of [webhookEnabled, webhookUrl, webhookSave, webhookReset]) control.disabled = true;
+  webhookStatus.textContent = input ? "Saving…" : "Loading…";
+  try {
+    const { enabled, destination, origin } = await api("/api/error-reporting/webhook", input ? { method: "PUT", body: JSON.stringify(input) } : {});
+    webhookLoaded = true;
+    webhookEnabled.checked = enabled;
+    webhookUrl.value = "";
+    webhookReset.hidden = destination !== "custom";
+    webhookDestination.textContent = origin ? `${destination === "default" ? "Node default" : "Custom destination"}: ${origin}` : "No webhook configured on this node.";
+    webhookStatus.textContent = input ? "Webhook settings saved." : "";
+  } catch (error) {
+    webhookStatus.textContent = error.message;
+  } finally {
+    webhookBusy = false;
+    for (const control of [webhookEnabled, webhookUrl, webhookSave, webhookReset]) control.disabled = !webhookLoaded;
+  }
+}
+
+webhookSave.addEventListener("click", () => {
+  const url = webhookUrl.value.trim();
+  void changeWebhook({ enabled: webhookEnabled.checked, ...(url ? { url } : {}) });
+});
+webhookReset.addEventListener("click", () => void changeWebhook({ enabled: webhookEnabled.checked, url: "" }));

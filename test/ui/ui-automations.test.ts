@@ -64,6 +64,31 @@ async function openRow(page: Page, name: string) {
   await ready(page);
 }
 
+test("the automation editor keeps its Back button while loading and can retry a failed load", { timeout: 90_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  await signInAndOpen(page, node.url, environment.username, environment.password);
+  const options = "**/api/automations/options";
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => { release = resolve; });
+  const refuse = async (route: import("playwright-core").Route) => {
+    await slow;
+    await route.fulfill({ status: 502, json: { error: "Node unavailable" } });
+  };
+  const create = page.getByTestId("automations-new-automation");
+  await page.route(options, refuse);
+  try {
+    await create.click();
+    await page.getByRole("status").filter({ hasText: "Loading automation settings" }).waitFor({ timeout: 3_000 });
+    await page.getByTestId("automation-back").click();
+    await create.waitFor();
+    await create.click();
+  } finally { release(); }
+  await page.getByRole("status").filter({ hasText: "Node unavailable" }).waitFor();
+  await page.unroute(options, refuse);
+  await page.getByTestId("automation-load-retry").click();
+  await ready(page);
+});
+
 test("the automation editor creates, edits and switches schedules and webhooks without a page error", { timeout: 240_000 }, async (t) => {
   const { page, environment, node } = await nativeUiFixture(t);
   const problems: string[] = [];

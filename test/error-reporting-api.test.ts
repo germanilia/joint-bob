@@ -57,7 +57,7 @@ test("client errors need a signed-in browser and a well-formed report", async ()
   assert.equal((await raw("/client-errors", JSON.stringify({ kind: "error", message: "x" }), false)).status, 401);
   assert.equal((await raw("/client-errors", JSON.stringify({ kind: "warn", message: "x" }))).status, 400);
   assert.equal((await raw("/client-errors", JSON.stringify({ kind: "error", message: "" }))).status, 400);
-  assert.equal((await raw("/client-errors", JSON.stringify({ kind: "error", message: "x".repeat(4_001) }))).status, 400);
+  assert.equal((await raw("/client-errors", JSON.stringify({ kind: "error", message: "x".repeat(64_001) }))).status, 400);
   assert.equal((await raw("/client-errors", JSON.stringify({ kind: "error", message: "off" }))).status, 202, "accepted and dropped while reporting is off");
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(published.length, 0);

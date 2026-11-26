@@ -68,6 +68,8 @@ test("every admin route answers a member like an unknown route, and the admin st
     const adminRoutes = (await registeredRoutes(root)).filter((route) => isAdminRoute(route.method, route.path.slice(4)));
     assert.ok(adminRoutes.length >= 25, `expected the admin routes to be registered, found ${adminRoutes.length}`);
 
+    assert.ok(adminRoutes.some((route) => route.method === "GET" && route.path === "/api/error-reporting/webhook"));
+    assert.ok(adminRoutes.some((route) => route.method === "PUT" && route.path === "/api/error-reporting/webhook"));
     const unknown = await fetch(`${node.url}/api/no-such-route`, { headers: { Cookie: noam.cookie } });
     const unknownBody = await unknown.text();
     assert.equal(unknown.status, 404);

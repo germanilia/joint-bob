@@ -552,6 +552,12 @@ launchctl kickstart -k gui/$(id -u)/com.joint-bob.node
 
 Node-specific ports, model aliases, credentials, proxy URLs, and executable overrides belong in `~/.joint-bob/env`. Restart the service after changing that file.
 
+### Error report webhook
+
+In **Settings → Notifications → Send errors to a webhook**, a node admin can opt in to sending redacted browser and backend error diagnostics to an HTTPS endpoint. It is off by default, even when a URL is configured. Set `JOINT_BOB_ERROR_WEBHOOK_URL` in the node's private `~/.joint-bob/env` for its default, or enter a replacement in Settings. The app shows only the destination origin after saving. Keep the full URL private if its path or query grants access.
+
+Short reports are posted as JSON. Long reports use `multipart/form-data` with a `joint-bob-error.txt` attachment. Enable **Accept attachments** on the destination if it is a Joint Bob webhook. Automatic reports include error messages, stacks, and recent failed request methods, paths, and status codes, not raw request bodies, full console history, or conversation transcripts. Repeated errors are deduplicated, and reporting does not change your ntfy settings.
+
 A node keeps its database in SQLite (`~/.joint-bob/node.db`) unless `JOINT_BOB_DATABASE_URL` in `~/.joint-bob/env` names a PostgreSQL 16+ database of its own. That database is read at start and begins empty. See [docs/postgres-node-database.md](docs/postgres-node-database.md).
 
 Every shell command an agent runs is supervised so the Tasks panel can list it, stream its output, and stop it. Supervision is a view only: commands wait inside the agent's tool call, subject to this node's subprocess maximum lifetime, and a finished task never wakes the conversation. **Settings > Shell commands** can cap how long a command may run on this node; a command that exceeds the cap is stopped and returns exit code 124. Commands finishing within a few seconds stay out of the Tasks panel.

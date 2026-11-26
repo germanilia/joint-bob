@@ -31,6 +31,9 @@ test("mobile focus menu opens auto respond at once while slow model lists load",
   await page.getByTestId("auto-respond-harness").locator("option").first().waitFor({ state: "attached" });
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#saveAutoRespondButton")!.disabled);
   assert.notEqual(await page.getByTestId("auto-respond-harness").inputValue(), "", "a harness is chosen once the list arrives");
+  const pool = page.getByTestId("auto-respond-provider-pool");
+  await pool.waitFor({ timeout: 3_000 });
+  assert.equal(await pool.locator("option").first().textContent(), "Use my current pool");
   await page.getByTestId("auto-respond-cancel-button").tap();
   await page.getByTestId("auto-respond-dialog").waitFor({ state: "hidden" });
 });

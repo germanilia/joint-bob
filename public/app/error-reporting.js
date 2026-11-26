@@ -1,6 +1,5 @@
-// Sends UI errors to this node, which forwards them to ntfy when Settings →
-// Notifications turns client errors on. The node also throttles; this keeps a
-// looping error from sending a request per frame.
+// Sends bounded browser diagnostics to this node; external delivery is the node admin's choice.
+import { recentFailedRequestMetadata } from "./error-report.js";
 import { state } from "./state.js";
 
 const WINDOW_MS = 10 * 60_000;
@@ -19,14 +18,22 @@ function admit(message, now) {
   return true;
 }
 
+export async function reportClientError(kind, message) {
+  if (!state.authenticated || !state.csrfToken || !message || !admit(message, Date.now())) return null;
+  // Plain fetch: a failed diagnostic must not sign out the user or report itself.
+  try {
+    const response = await fetch("/api/client-errors", {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": state.csrfToken },
+      body: JSON.stringify({ kind, message: message.slice(0, 64_000), page: location.pathname.slice(0, 500), failedRequests: recentFailedRequestMetadata() }),
+    });
+    return response.ok ? await response.json() : null;
+  } catch { return null; }
+}
+
 window.addEventListener("joint-bob-client-error", (event) => {
-  const { kind, message } = event.detail || {};
-  if (!state.authenticated || !state.csrfToken || !message || !admit(message, Date.now())) return;
-  // Plain fetch: api() signs the page out on 401, and a failed report must not report itself.
-  fetch("/api/client-errors", {
-    method: "POST",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", "X-CSRF-Token": state.csrfToken },
-    body: JSON.stringify({ kind, message: message.slice(0, 4000), page: `${location.pathname}${location.hash}`.slice(0, 500) }),
-  }).catch(() => undefined);
+  const { kind, message } = event.detail;
+  void reportClientError(kind, message);
 });

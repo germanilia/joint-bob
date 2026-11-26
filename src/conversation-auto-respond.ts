@@ -7,8 +7,10 @@ import { z } from "zod";
 import { resolveDataDirectory } from "./data-directory.js";
 import { messageAuthorSchema, type MessageAuthor } from "./message-author-schema.js";
 import { authorTextHash } from "./message-authors.js";
+import { poolMemberCompatible } from "./provider-profiles/pool-sharing.js";
+import { getSubscriptionPool, poolCandidates } from "./provider-profiles/pools.js";
 import { accessibleProviderProfile } from "./provider-profiles/store.js";
-import type { ChatMessage } from "./types.js";
+import type { ChatMessage, HarnessId } from "./types.js";
 
 export type AutoRespondStatus = "active" | "stopped" | "off";
 export type AutoRespondStopKind = "stop-instruction" | "limit" | "user-stopped" | "turn-failed" | "responder-failed" | "budget";
@@ -34,6 +36,7 @@ export type SystemControlLimits = Pick<z.input<typeof systemControlRequestSchema
 
 export const autoRespondConfigSchema = z.object({
   providerProfileId: z.string().uuid().nullable().default(null),
+  providerPoolId: z.string().uuid().nullable().optional(),
   harnessId: z.string().min(1).max(100),
   provider: z.string().trim().min(1).max(200),
   modelId: z.string().trim().min(1).max(300),
@@ -152,10 +155,18 @@ export async function getAutoRespond(projectId: string, conversationId: string):
 }
 
 export function validateAutoRespondProfile(accountId: string | null, config: AutoRespondConfig): void {
-  if (!config.providerProfileId) return;
-  if (!accountId) throw new Error("An authenticated creator is required for a provider profile");
-  const profile = accessibleProviderProfile(accountId, config.providerProfileId, "automation");
-  if (profile.provider !== config.provider) throw new Error("Profile provider does not match responder provider");
+  if (config.providerPoolId) {
+    if (config.providerProfileId) throw new Error("Select either a pool or a profile, not both");
+    if (!accountId) throw new Error("An authenticated creator is required for a responder pool");
+    const pool = getSubscriptionPool(accountId, config.providerPoolId);
+    if (!poolCandidates(pool, "claude").some((profile) => poolMemberCompatible(config.harnessId as HarnessId, profile.provider))) {
+      throw new Error("The responder pool has no profiles compatible with the selected harness");
+    }
+  } else if (config.providerProfileId) {
+    if (!accountId) throw new Error("An authenticated creator is required for a provider profile");
+    const profile = accessibleProviderProfile(accountId, config.providerProfileId, "automation");
+    if (profile.provider !== config.provider) throw new Error("Profile provider does not match responder provider");
+  }
 }
 
 /** Turns auto respond on (resuming a stopped one and zeroing its count) with this configuration. */
