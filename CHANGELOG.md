@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.8 — 2026-11-27
+
+- **Assistant Teams:** Deleting a team now closes its page. Before, the page stayed on the deleted team, kept checking it every few seconds (each check failing with an error) and still offered Delete team.
+
 ## 2.345.7 — 2026-11-27
 
 - **Conversations:** Deleting a conversation that another machine runs, while that machine is not answering, now fails with "Conversation owner is unavailable; delete was not confirmed" instead of "fetch failed", and no longer sends an error report.
