@@ -2,8 +2,8 @@
 
 Open **Settings → Resources → MCP servers → Add MCP servers** on the machine where the conversation runs.
 
-- Enter a name and a remote streamable HTTP URL, or paste a JSON object containing several `mcpServers` entries.
-- Choose **Shared connection** for Pi, Claude, Kiro and Google Antigravity, or **Native Pi OAuth · Pi only**, then install and confirm. Neither option requires an external Pi plugin.
+- Paste a remote Streamable HTTP URL and select **Connect**. If the provider asks for approval, complete sign-in in the new tab and select **Done**. Pi, Claude, Kiro and Google Antigravity use the same approved connection on this machine.
+- Use **Advanced setup** to pick a server name, import MCP JSON, or choose **Native Pi OAuth · Pi only**. Neither option requires an external Pi plugin.
 - Start a new conversation after installing. Existing Pi conversations can use `/reload` to reload tools.
 
 For Figma, use the name `figma` and URL `https://mcp.figma.com/mcp`. If a native Figma server is already installed, remove the duplicate or choose a different name. Existing native/plugin MCP configurations and their Claude-only sign-ins remain separate; importing a server does not extract or copy native OAuth credentials.
@@ -44,7 +44,7 @@ Native mode uses Pi's client identity. Some providers reject it. Joint Bob repor
 
 Remote servers use HTTPS, or HTTP on loopback for local services. Legacy SSE is not supported. Local commands run with the installing user's runtime permissions; install only servers you trust. `command` is an executable, not a shell command string. Shared definitions accept literal `args`, `env`, `cwd` and HTTP `headers`; their values are not evaluated. Native mode passes its configuration to Pi's SDK, which supports its own environment-variable and command expansion rules. Install only trusted definitions.
 
-OAuth servers must support dynamic client registration for Joint Bob, or provide registered client details under `oauth.clientId` and optional `oauth.clientSecret`. A provider can reject unapproved clients; the UI reports sign-in failure rather than borrowing another client's identity or credentials. Real Figma approval is a separate live-account check; automated tests use a local OAuth fixture.
+OAuth servers must support dynamic client registration for Joint Bob, or provide registered client details under `oauth.clientId` and optional `oauth.clientSecret`. A provider can reject unapproved clients; the UI reports the rejection rather than borrowing another client's identity or credentials. Real Figma approval is a separate live-account check; automated tests use a local OAuth fixture.
 
 ## Access and errors
 

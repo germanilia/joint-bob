@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
+import { AccessDeniedError, ServerError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ManagedMcpStore, type ManagedMcpServer } from "./store.js";
@@ -143,8 +144,13 @@ export class ManagedMcpClient {
       await client.close(); this.endFlow(flow);
       return { flowId: id, serverName: name };
     } catch (error) {
-      if (!(error instanceof UnauthorizedError) || !provider.authUrl) { this.endFlow(flow); throw new Error("Could not start MCP sign-in. Check OAuth support and client registration for this server."); }
-      return { flowId: id, serverName: name, authUrl: provider.authUrl, callbackPort: port };
+      if (error instanceof UnauthorizedError && provider.authUrl) return { flowId: id, serverName: name, authUrl: provider.authUrl, callbackPort: port };
+      this.endFlow(flow);
+      if (error instanceof AccessDeniedError || error instanceof ServerError && error.message.startsWith("HTTP 403:")) {
+        throw new Error("The provider refused Joint Bob’s shared OAuth sign-in. It may require an approved MCP client.");
+      }
+      if (error instanceof StreamableHTTPError && error.code === 404) throw new Error("MCP endpoint not found. Check the full server URL.");
+      throw new Error("Could not start MCP sign-in. Check OAuth support and client registration for this server.");
     }
   }
   async finish(id: string, callbackUrl?: string) {

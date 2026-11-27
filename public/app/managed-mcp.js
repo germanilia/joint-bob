@@ -1,9 +1,9 @@
 import { api } from "./api.js";
 import { confirmAction, toast } from "./shell.js";
 
-let expanded = false, busy = false, flow = null;
+let expanded = false, advanced = false, busy = false, flow = null, connectError = "";
 let statuses = new Map();
-const draft = { name: "", url: "", json: "", callback: "", authMode: "shared" };
+const draft = { quickUrl: "", name: "", url: "", json: "", callback: "", authMode: "shared" };
 let scopeKey = "", nativeError = "";
 function selectScope(scope) {
   const key = scope.projectId || "";
@@ -33,6 +33,45 @@ function input(label, key, placeholder, multiline = false) {
   if (multiline) control.rows = 3;
   control.addEventListener("input", () => { draft[key] = control.value; }); field.append(control); return field;
 }
+async function openSignIn(endpoint, route, payload, tab, key) {
+  try {
+    const result = await api(`${endpoint}/${route}`, { method: "POST", body: JSON.stringify(payload) });
+    if (!result.authUrl) {
+      tab?.close();
+      if (key === scopeKey) statuses.set(result.serverName, { status: "connected" });
+      return;
+    }
+    flow = { ...result, base: endpoint, scopeKey: key };
+    if (tab) { tab.opener = null; tab.location.href = result.authUrl; }
+  } catch (error) { tab?.close(); throw error; }
+}
+
+function quickSetup(supported, changed) {
+  const form = document.createElement("form");
+  const hint = document.createElement("p");
+  hint.textContent = `Sign in once for ${supported}. The connection stays with your account on this machine.`;
+  const url = input("Server URL", "quickUrl", "https://mcp.figma.com/mcp");
+  const field = url.querySelector("input"); field.type = "url"; field.required = true;
+  const connect = button("Connect", "managed-mcp-connect", () => {}); connect.type = "submit";
+  form.append(hint, url, connect);
+  if (connectError) {
+    const error = document.createElement("p"); error.setAttribute("role", "alert"); error.textContent = connectError; form.append(error);
+  }
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    if (busy || flow) { toast("Finish or cancel the open MCP sign-in first"); return; }
+    const tab = window.open("about:blank", "_blank"), key = scopeKey;
+    connect.disabled = true;
+    void perform(async () => {
+      try {
+        await openSignIn(base, "connect", { url: draft.quickUrl.trim() }, tab, key);
+        draft.quickUrl = ""; connectError = ""; expanded = false;
+      } catch (error) { connectError = error.message; throw error; }
+    }, changed);
+  });
+  return form;
+}
+
 export function managedMcpSetup(harnesses, changed, scope = {}) {
   selectScope(scope);
   const section = document.createElement("section"); section.className = "resources-add"; section.dataset.testid = "managed-mcp-setup";
@@ -52,9 +91,12 @@ export function managedMcpSetup(harnesses, changed, scope = {}) {
   section.append(actions);
   if (expanded) {
     const supported = new Intl.ListFormat("en").format(harnesses.map(({ label }) => label));
-    const hint = document.createElement("p"); hint.textContent = `Shared connections work with ${supported}. Native Pi OAuth uses the selected Pi harness, no plugin installation needed. Servers and sign-ins belong to your account on this machine. Start a new conversation after installation.`;
+    section.append(quickSetup(supported, changed));
+    const details = document.createElement("details"); details.open = advanced;
+    details.addEventListener("toggle", () => { advanced = details.open; });
+    const summary = document.createElement("summary"); summary.textContent = "Advanced setup"; summary.dataset.testid = "managed-mcp-advanced";
     const form = document.createElement("form"); form.dataset.testid = "managed-mcp-form";
-    form.append(hint, input("Server name", "name", "figma"), input("Remote MCP URL", "url", "https://mcp.figma.com/mcp"),
+    form.append(input("Server name", "name", "figma"), input("Remote MCP URL", "url", "https://mcp.figma.com/mcp"),
       input("Or import multiple servers as MCP JSON. Stdio commands run as your account.", "json", '{"mcpServers":{"figma":{"url":"https://mcp.figma.com/mcp"},"local":{"command":"node","args":["/path/server.mjs"]}}}', true));
     const installLabel = () => draft.authMode === "native" ? "Install for Pi" : "Install shared connection";
     const install = button(installLabel(), "managed-mcp-install", () => {}); install.type = "submit";
@@ -70,7 +112,7 @@ export function managedMcpSetup(harnesses, changed, scope = {}) {
         const result = await api(base, { method: "POST", body: JSON.stringify(config) });
         draft.name = ""; draft.url = ""; draft.json = ""; expanded = false; toast(`Installed ${result.installed.join(", ")}`);
       }, changed);
-    }); section.append(form);
+    }); details.append(summary, form); section.append(details);
   }
   if (flow) {
     const note = document.createElement("p"); note.textContent = `Signing in to ${flow.serverName}. Finish in the new tab, then choose Done. If the localhost page cannot load, paste its full address below.`;
@@ -102,11 +144,8 @@ export function managedMcpControls(server, changed, scope = {}) {
     const tab = window.open("about:blank", "_blank");
     void perform(async () => {
       try {
-        const result = await api(`${endpoint}/auth/start`, { method: "POST", body: JSON.stringify({ serverName: server.name, ...(server.authMode === "native" ? scope : {}) }) });
-        if (!result.authUrl) { tab?.close(); if (initiatingKey === scopeKey) statuses.set(server.name, { status: "connected" }); return; }
-        flow = { ...result, base: endpoint, scopeKey: initiatingKey };
-        if (tab) { tab.opener = null; tab.location.href = result.authUrl; }
-      } catch (error) { tab?.close(); report(error.message); throw error; }
+        await openSignIn(endpoint, "auth/start", { serverName: server.name, ...(server.authMode === "native" ? scope : {}) }, tab, initiatingKey);
+      } catch (error) { report(error.message); throw error; }
     }, changed);
   }), button("Sign out", "managed-mcp-sign-out", () => void perform(async () => {
     try {

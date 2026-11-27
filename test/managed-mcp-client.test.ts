@@ -7,6 +7,7 @@ import test from "node:test";
 import { ManagedMcpStore, parseMcpServers } from "../src/mcp/store.js";
 import { ManagedMcpClient } from "../src/mcp/client.js";
 import { managedMcpPiExtension } from "../src/mcp/pi-extension.js";
+import { nativeMcpFixture } from "./native-mcp-fixture.js";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 // A loopback MCP/OAuth service, not a real website or account.
@@ -80,6 +81,18 @@ test("one OAuth sign-in serves repeated connections for one account, rejects for
     await alice.signOut("figma");
     assert.equal((await alice.status("figma")).status, "needs-auth");
   } finally { await alice.close(); await bob.close(); await remote.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("shared OAuth reports a registration rejection without exposing provider data", async () => {
+  for (const rejectRegistration of [true, "plain"] as const) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "mcp-oauth-denied-")), remote = await nativeMcpFixture({ rejectRegistration });
+    const client = new ManagedMcpClient(new ManagedMcpStore(root, "alice"));
+    try {
+      client.store.install(parseMcpServers({ mcpServers: { fixture: { url: `${remote.origin}/mcp` } } }));
+      await assert.rejects(client.start("fixture"), { message: "The provider refused Joint Bob’s shared OAuth sign-in. It may require an approved MCP client." });
+      assert.equal(remote.registrations(), 1);
+    } finally { await client.close(); await remote.close(); await rm(root, { recursive: true, force: true }); }
+  }
 });
 
 test("OAuth metadata cannot send the sign-in popup to a script URL", async () => {
