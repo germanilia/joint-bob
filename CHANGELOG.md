@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.346.13 — 2026-11-27
+
+- **Pi provider profiles & Assistant Teams:** Bounded Pi profile model discovery to a 5-second timeout with a 60-second failure backoff so an unresponsive custom Pi provider can no longer hang `/api/team-hub`, the New Team Setup wizard, or model pickers indefinitely.
 ## 2.346.12 — 2026-11-27
 
 - **Diagnostics:** The performance log now records how long each harness takes to check its installation, check its sign-in and list its models, so a slow or stuck harness list or automation editor can be traced to one harness and one step. Nothing else changes.
