@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.345.0 — 2026-11-27
+
+- **Assistant Teams:** Replaced the cluster cards in the New Team Setup wizard with a searchable cluster dropdown that lists all joined clusters, clearly marks clusters that already have a team or are unreachable, and offers a one-click shortcut to continue setting up an existing local team.
 ## 2.344.12 — 2026-11-27
 
 - **Worktrees:** Merging a worktree into a local project no longer stops with "Installed files differ from the verified candidate" when the task adds a file. The check after installing went through the project's Git index, which has no entry yet for a new file, so it read every added file as missing. The merge then stopped halfway and left the project's Git index locked.
