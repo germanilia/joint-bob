@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.14 — 2026-11-27
+
+- **Subscription profiles:** Deleting a profile that is still in a pool now says "Remove this profile from its pools before deleting it" and keeps the profile signed in. Before, the profile was signed out first and the delete then failed with a server error.
+
 ## 2.346.13 — 2026-11-27
 
 - **Pi provider profiles & Assistant Teams:** Bounded Pi profile model discovery to a 5-second timeout with a 60-second failure backoff so an unresponsive custom Pi provider can no longer hang `/api/team-hub`, the New Team Setup wizard, or model pickers indefinitely.

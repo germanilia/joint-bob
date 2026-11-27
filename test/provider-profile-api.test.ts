@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -24,6 +24,19 @@ test("node-local profile API validates scopes, protects secrets, and refuses sel
     assert.ok(piProviders.body.providers.some((item) => item.id === "zai" && item.methods.some((method) => method.id === "api_key")));
     assert.equal((await api(node, session, "POST", `/provider-profiles/${piId}/providers/zai/login`, { methodId: "oauth" })).status, 400);
     assert.equal((await api(node, session, "DELETE", `/provider-profiles/${piId}`)).status, 200);
+    // A pool member's delete is refused before its sign-in is touched.
+    const pooled = await api<{ profile: { id: string } }>(node, session, "POST", "/provider-profiles", { provider: "pi", label: "Pooled Pi" });
+    const pooledAuth = path.join(node.dataDir, "provider-profile-auth", pooled.body.profile.id, "auth.json");
+    await mkdir(path.dirname(pooledAuth), { recursive: true });
+    await writeFile(pooledAuth, JSON.stringify({ zai: { type: "api_key", key: "synthetic-pooled-key" } }));
+    const pool = await api<{ pool: { id: string } }>(node, session, "POST", "/provider-profiles/pools", { name: "Pooled", profileIds: [pooled.body.profile.id] });
+    assert.equal(pool.status, 201);
+    const refused = await api<{ error: string }>(node, session, "DELETE", `/provider-profiles/${pooled.body.profile.id}`);
+    assert.equal(refused.status, 409);
+    assert.match(JSON.stringify(refused.body), /Remove this profile from its pools before deleting it/);
+    assert.match(await readFile(pooledAuth, "utf8"), /synthetic-pooled-key/, "a refused delete keeps the profile signed in");
+    assert.equal((await api(node, session, "DELETE", `/provider-profiles/pools/${pool.body.pool.id}`)).status, 200);
+    assert.equal((await api(node, session, "DELETE", `/provider-profiles/${pooled.body.profile.id}`)).status, 200);
     const listed = await api<{ profiles: Array<{ id: string }> }>(node, session, "GET", "/provider-profiles");
     assert.deepEqual(listed.body.profiles.map((item) => item.id), [...seeded.body.profiles.map(item => item.id), id]);
     assert.doesNotMatch(JSON.stringify(listed.body), /refreshToken|accessToken|auth\.json/);

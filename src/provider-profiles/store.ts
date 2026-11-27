@@ -189,11 +189,17 @@ export function localProviderProfile(id: string): ProviderProfile | undefined {
   return row ? fromRow(row) : undefined;
 }
 
-export function deleteProviderProfile(owner: string, id: string): void {
-  const profile = providerProfile(owner, id), db = database();
+/** Refuses while anyone still chooses the profile or a live pool holds it. Deleting checks this before signing the profile out. */
+export function assertProviderProfileDeletable(id: string): void {
+  const db = database();
   if (db.prepare("SELECT 1 FROM provider_profile_selections WHERE profile_id=? LIMIT 1").get(id)) throw new Error("Remove this profile's selections before deleting it");
   const poolTablesExist = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscription_pool_members'").get();
   if (poolTablesExist && db.prepare("SELECT 1 FROM subscription_pool_members m JOIN subscription_pools p ON p.id=m.pool_id WHERE m.profile_id=? AND p.deleted=0 LIMIT 1").get(id)) throw new Error("Remove this profile from its pools before deleting it");
+}
+
+export function deleteProviderProfile(owner: string, id: string): void {
+  const profile = providerProfile(owner, id), db = database();
+  assertProviderProfileDeletable(id);
   transaction(db, () => writeProfile(db, { ...profile, deleted: true }, stamp(db, origin(db))));
   if (profile.provider === "kiro") rmSync(path.join(resolveDataDirectory(), "kiro-profile-auth", profile.id), { recursive: true, force: true });
   if (profile.provider === "antigravity") rmSync(path.join(resolveDataDirectory(), "provider-profile-auth", profile.id), { recursive: true, force: true });

@@ -11,7 +11,7 @@ import { accountInCluster } from "../../cluster-accounts.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
 import { clusterManager, signedPost } from "../cluster-v2.js";
 import { ClusterV2HttpError } from "../../cluster-v2-errors.js";
-import { createProviderProfile, deleteProviderProfile, listProviderProfiles, listProviderProfileSelections, providerProfile, providerProfileById, poolChoiceSchema, profileSelectionSchema, setProviderProfileSelection, listSubscriptionSelections, listAccessibleProviderProfiles, setProviderProfileShared, twinProviderProfile } from "../../provider-profiles/store.js";
+import { assertProviderProfileDeletable, createProviderProfile, deleteProviderProfile, listProviderProfiles, providerProfile, providerProfileById, poolChoiceSchema, profileSelectionSchema, setProviderProfileSelection, listSubscriptionSelections, listAccessibleProviderProfiles, setProviderProfileShared, twinProviderProfile } from "../../provider-profiles/store.js";
 import { createSubscriptionPool, deleteSubscriptionPool, getSubscriptionPool, listSubscriptionPools, setSubscriptionPoolChoice, updateSubscriptionPool, type SubscriptionPool } from "../../provider-profiles/pools.js";
 import { clusterPoolGranted, setClusterPoolGrant, poolProfileProviderSchema, applyClusterSubscriptionPoolEvent, assignedClusterPoolsForOwner, clusterPoolProfileAuthorized, getClusterSubscriptionPool, parseClusterSubscriptionPoolAssignment, setClusterSubscriptionPool, type ClusterSubscriptionPoolManifest } from "../../provider-profiles/pool-sharing.js";
 import { authorizeClusterPoolUse } from "../../provider-profiles/pool-authorization.js";
@@ -39,7 +39,7 @@ function route(work: (request: Request, response: Response) => unknown) {
       if (error instanceof Error && /(?:Kiro|Antigravity) profiles.*standalone/.test(error.message)) { sendError(response, 400, error.message); return; }
       if (error instanceof ClusterV2HttpError) { sendError(response, error.statusCode, error.message); return; }
       if (error instanceof Error && /not found/i.test(error.message)) { sendError(response, 404, error.message); return; }
-      if (error instanceof Error && /selection|assignment|assigned|in progress|busy|pending sign-in|already signed in|finishing|automation only/i.test(error.message)) { sendError(response, 409, error.message); return; }
+      if (error instanceof Error && /selection|assignment|assigned|before deleting|in progress|busy|pending sign-in|already signed in|finishing|automation only/i.test(error.message)) { sendError(response, 409, error.message); return; }
       next(error);
     }
   };
@@ -182,7 +182,7 @@ app.post("/api/provider-profiles/:id/logout", route(async (request, response) =>
 }));
 app.delete("/api/provider-profiles/:id", route(async (request, response) => {
   const selected = profile(request, response); editable(selected.id);
-  if (listProviderProfileSelections(owner(response)).some((entry) => entry.profileId === selected.id)) throw new Error("Remove this profile's selections before deleting it");
+  assertProviderProfileDeletable(selected.id);
   if (loginStatus(selected)?.state === "waiting") throw new Error("A login is in progress");
   const login = await profileLoginState(selected);
   if (!login.signedIn && login.message !== "Sign in on this node") throw new Error(login.message);
