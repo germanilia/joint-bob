@@ -39,10 +39,30 @@ function requestFailure(error, path, options, status) {
   return failure;
 }
 
+// A read that got no answer at all (a laptop waking, a changed network) is asked again before anyone
+// hears of it. Writes are never repeated: they may have reached the server.
+const RETRY_DELAYS_MS = [1_000, 3_000, 8_000];
+
+async function fetchWithRetry(path, init) {
+  const read = ["GET", "HEAD"].includes((init.method || "GET").toUpperCase());
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fetch(path, init);
+    } catch (error) {
+      if (!read || error.name !== "TypeError" || init.signal?.aborted || attempt === RETRY_DELAYS_MS.length) throw error;
+      // A cancellation during the wait ends it; the next fetch then rejects with the caller's reason.
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, RETRY_DELAYS_MS[attempt]);
+        init.signal?.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+      });
+    }
+  }
+}
+
 async function send(path, options, consume) {
   let status = 0;
   try {
-    const response = await fetch(path, { ...options, cache: "no-store", headers: { ...headers(), ...(options.headers || {}) } });
+    const response = await fetchWithRetry(path, { ...options, cache: "no-store", headers: { ...headers(), ...(options.headers || {}) } });
     status = response.status;
     if (!response.ok) {
       if (status === 401 && !["/api/auth/status", "/api/auth/login", "/api/auth/login/mfa"].includes(path)) showSignedOut();

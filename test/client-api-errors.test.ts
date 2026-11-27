@@ -5,17 +5,23 @@ import { runInNewContext } from "node:vm";
 
 const source = (await readFile("public/app/api.js", "utf8")).replace(/^import .*;\n/gm, "").replace(/^export /gm, "");
 
-function client(fetch: (...args: any[]) => any) {
+function client(fetch: (...args: any[]) => any, duringWait?: () => void) {
+  const waits: number[] = [];
   const logs: unknown[][] = [];
   const alerts: Array<{ kind: string; message: string }> = [];
   const window = new EventTarget();
   window.addEventListener("joint-bob-client-error", (event) => alerts.push((event as CustomEvent).detail));
   let signedOut = false;
   const requests = runInNewContext(`${source}\n({ api, apiBlob, apiLines })`, {
-    fetch, Error, window, CustomEvent, console: { warn: (...args: unknown[]) => logs.push(args) },
+    fetch, Error, window, CustomEvent, clearTimeout,
+    setTimeout: (done: () => void, ms: number) => {
+      waits.push(ms);
+      if (!duringWait) return setTimeout(done, 0);
+      queueMicrotask(duringWait);
+    }, console: { warn: (...args: unknown[]) => logs.push(args) },
     state: { csrfToken: "synthetic-csrf" }, showSignedOut: () => { signedOut = true; }, recordFailure: () => {}, TextDecoderStream,
   });
-  return { ...requests, logs, alerts, signedOut: () => signedOut };
+  return { ...requests, logs, alerts, waits, signedOut: () => signedOut };
 }
 
 test("an unexplained fetch abort names the request and is not treated as user cancellation", async () => {
@@ -112,6 +118,43 @@ for (const kind of ["api", "apiBlob", "apiLines"]) {
     assert.equal(request.logs.length, 1);
   });
 }
+
+test("a read that gets no answer is retried without telling anyone", async () => {
+  let calls = 0;
+  const request = client(async () => {
+    if (++calls < 3) throw new TypeError("Load failed");
+    return Response.json({ ok: true });
+  });
+  assert.deepEqual(await request.api("/api/projects"), { ok: true });
+  assert.equal(calls, 3);
+  assert.deepEqual(request.waits, [1_000, 3_000]);
+  assert.deepEqual([...request.logs, ...request.alerts], []);
+});
+
+test("a read that never gets an answer is reported once, after the retries", async () => {
+  let calls = 0;
+  const request = client(async () => { calls++; throw new TypeError("Load failed"); });
+  await assert.rejects(request.api("/api/projects"), /GET \/api\/projects: No response was received/);
+  assert.equal(calls, 4);
+  assert.equal(request.alerts.length, 1);
+});
+
+test("a write that gets no answer is never sent again", async () => {
+  let calls = 0;
+  const request = client(async () => { calls++; throw new TypeError("Load failed"); });
+  await assert.rejects(request.api("/api/preferences", { method: "PUT" }), /No response was received/);
+  assert.equal(calls, 1);
+});
+
+test("cancelling while a retry is waiting stays quiet", async () => {
+  const controller = new AbortController();
+  const request = client(async (_path: string, init: RequestInit) => {
+    if (init.signal!.aborted) throw init.signal!.reason;
+    throw new TypeError("Load failed");
+  }, () => controller.abort());
+  await assert.rejects(request.api("/api/projects", { signal: controller.signal }), (failure: any) => failure.cancelled);
+  assert.deepEqual(request.alerts, []);
+});
 
 test("HTTP errors retain server explanations and conflict details", async () => {
   const details = { code: "transcript-conflict", sources: ["fixture"] };

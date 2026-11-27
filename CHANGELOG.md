@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.8 — 2026-11-27
+
+- **Connection drops:** A page load or refresh that gets no response is retried quietly for about 12 seconds before an error is shown or reported.
+
 ## 2.344.7 — 2026-11-27
 
 - **Mobile:** Open Automations from the ⋯ menu without switching to desktop view.
