@@ -363,6 +363,17 @@ test("installation handles deletion of the last file in a nested directory", asy
   assert.equal(git(root, "status", "--porcelain"), "");
 });
 
+test("installation adds new files in new directories", async t => {
+  const { root, changes } = await fixture(t);
+  changes.writes.push({ path: "tools/bin/run", content: Buffer.from("#!/bin/sh\necho task\n"), executable: true });
+  const candidate = await prepare(root, changes);
+  assert.equal(candidate.status, "prepared"); if (candidate.status !== "prepared") return;
+  await install(root, candidate);
+  assert.equal(git(root, "rev-parse", "HEAD"), candidate.commit);
+  assert.equal(await readFile(path.join(root, "tools/bin/run"), "utf8"), "#!/bin/sh\necho task\n");
+  assert.equal(git(root, "status", "--porcelain"), "");
+});
+
 test("verified worktree integration runs checks, commits only the task, and deletes its worktree", async t => {
   const { root } = await fixture(t);
   const worktreeRoot = await mkdtemp(path.join(os.tmpdir(), "jb-integration-worktrees-"));
