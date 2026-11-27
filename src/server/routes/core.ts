@@ -99,7 +99,7 @@ app.get("/api/health", (_request, response) => {
     return;
   }
   if (!flags.startupReady) {
-    response.status(503).json({ status: "starting", version, release });
+    response.set("Retry-After", "5").status(503).json({ status: "starting", version, release });
     return;
   }
   response.json({ status: "ok", version, release });

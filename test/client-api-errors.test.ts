@@ -168,6 +168,29 @@ test("a proxy that cannot reach the app is treated like no answer for reads", as
   assert.equal(appCalls, 1);
 });
 
+test("a starting app's 503 with Retry-After is treated like no answer for reads", async () => {
+  const starting = () => Response.json({ error: "This node is starting" }, { status: 503, headers: { "Retry-After": "5" } });
+  let calls = 0;
+  const restarting = client(async () => (++calls < 3 ? starting() : Response.json({ ok: true })));
+  assert.deepEqual(await restarting.api("/api/cluster/inventory"), { ok: true });
+  assert.equal(calls, 3);
+  assert.deepEqual([...restarting.logs, ...restarting.alerts], []);
+
+  const stillStarting = client(async () => starting());
+  await assert.rejects(stillStarting.api("/api/cluster/node"), /GET \/api\/cluster\/node: No response was received/);
+  assert.equal(stillStarting.waits.length, 3);
+
+  let writes = 0;
+  const write = client(async () => { writes++; return starting(); });
+  await assert.rejects(write.api("/api/cluster/node", { method: "PUT" }), /This node is starting/);
+  assert.equal(writes, 1);
+
+  let unavailableCalls = 0;
+  const unavailable = client(async () => { unavailableCalls++; return Response.json({ error: "Browser node is no longer paired" }, { status: 503 }); });
+  await assert.rejects(unavailable.api("/api/browser/status"), /Browser node is no longer paired/);
+  assert.equal(unavailableCalls, 1, "the app's other 503 answers are explanations, not a restart");
+});
+
 test("a write that gets no answer is never sent again", async () => {
   let calls = 0;
   const request = client(async () => { calls++; throw new TypeError("Load failed"); });

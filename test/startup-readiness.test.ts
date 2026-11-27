@@ -114,6 +114,7 @@ test("a node whose agent resources cannot be reconciled stays starting and asks 
 
     const starting = await waitForHealth(port, 503);
     assert.deepEqual(await starting.json(), { status: "starting", version: appVersion(), release: "development" });
+    assert.equal(starting.headers.get("retry-after"), "5", "open pages retry instead of reporting an error");
     const peerWhileStarting = await fetch(`http://127.0.0.1:${port}/api/cluster/v2/transcripts?projectId=project-1`);
     assert.equal(peerWhileStarting.status, 503, "peers are asked to retry while the node starts");
     assert.equal(peerWhileStarting.headers.get("retry-after"), "5");
