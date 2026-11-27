@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.10 — 2026-11-27
+
+- **Chat:** A queued message that an update restart caught while it was starting can now be edited or force started. Before, Edit and Force start were refused with "Queued prompt changed" or "Queued message changed", Delete was the only way out, and every message queued after it kept waiting while the chat repeated "Queued prompt start is uncertain; edit or cancel it before retrying".
+
 ## 2.345.9 — 2026-11-27
 
 - **Schedules:** The scheduler's check every ten seconds no longer locks the node database for schedules that are not due. Before, while another process held that lock, each check stalled Joint Bob for up to five seconds and sent a "Scheduled dispatch failed: database is locked" error report, even when no schedule was due. Schedules that are due run as before.
