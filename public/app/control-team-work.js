@@ -1,5 +1,6 @@
 // What a team is doing and work for it, for a team on this machine or on another machine of the cluster (/api/team-hub).
 import { api as request } from './api.js';
+import { renderMarkdown } from '../markdown.js';
 import { makeNode, makeButton } from './relay-ui.js';
 import { openExecutionDetailModal } from './control-team-modals.js';
 
@@ -182,7 +183,9 @@ export function createTeamWork(teamId, members, { isCurrent, fail, isLocal = tru
     const part = view.assignments.find(entry => !entry.delegated && entry.result) ?? view.assignments.find(entry => !entry.delegated);
     if (view.state === 'done' && part?.result) {
       const answer = makeNode('details', 'team-answer-box');
-      answer.append(makeNode('summary', '', 'Answer'), makeNode('div', 'team-memory-read', part.result));
+      const answerBody = makeNode('div', 'team-answer-markdown markdown');
+      renderMarkdown(answerBody, part.result);
+      answer.append(makeNode('summary', '', 'Answer'), answerBody);
       answer.open = true;
       item.append(answer);
     }

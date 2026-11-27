@@ -1,9 +1,10 @@
 // 4-step Chief-led New Team Setup Wizard.
 import { api as request } from './api.js';
+import { renderMarkdown } from '../markdown.js';
 import { makeButton, makeNode } from './relay-ui.js';
 import { createSearchableSelect } from './searchable-select.js';
 import { toast } from './shell.js';
-import { openMemberConnectionsModal } from './control-team-modals.js';
+import { openExecutionDetailModal, openMemberConnectionsModal } from './control-team-modals.js';
 import { renderTeamTelegram } from './control-team-telegram.js';
 
 const api = (path, options = {}) => request(path, { ...options, ...(options.body ? { body: JSON.stringify(options.body) } : {}) });
@@ -257,6 +258,13 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
     body.append(wrap);
   }
 
+  const formatElapsed = (iso) => {
+    const ms = iso ? Date.now() - Date.parse(iso) : NaN;
+    if (!Number.isFinite(ms) || ms < 0) return '';
+    const sec = Math.floor(ms / 1000);
+    return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`;
+  };
+
   function renderStep2() {
     body.replaceChildren();
     const wrap = makeNode('div', 'team-wizard-pane');
@@ -266,16 +274,38 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
     const feed = makeNode('div', 'team-wizard-feed');
     const form = makeNode('form', 'team-wizard-composer');
     const input = document.createElement('textarea');
-    input.rows = 3;
-    input.placeholder = 'Example: Build my Chief of Staff team: /finance for personal Gmail & bills, /sela for work email/Slack, and /comms for WhatsApp triage (draft-only). Propose the team blueprint.';
+    input.rows = 2;
+    input.placeholder = 'Ask Chief to adjust a role, boundary, or skill — or describe what this team should cover…';
     input.dataset.testid = 'team-wizard-prompt';
+    const sendRow = makeNode('div', 'team-wizard-composer-bar');
     const sendBtn = document.createElement('button');
     sendBtn.type = 'submit';
     sendBtn.className = 'primary compact';
     sendBtn.textContent = `Send to ${chiefName}`;
-    form.append(input, sendBtn);
+    sendRow.append(makeNode('span', 'team-muted team-wizard-composer-hint', 'Cmd/Ctrl+Enter to send'), sendBtn);
+    form.append(input, sendRow);
+    input.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); form.requestSubmit(); } });
 
-    const refreshDesign = async () => {
+    let lastRenderKey = '';
+
+    const renderUserBrief = (text) => {
+      const box = makeNode('div', 'team-wizard-msg-user');
+      const clean = String(text ?? '').trim();
+      if (clean.length <= 260) {
+        box.textContent = clean;
+        return box;
+      }
+      const details = document.createElement('details');
+      details.className = 'team-wizard-brief-details';
+      const summary = document.createElement('summary');
+      summary.textContent = `${clean.slice(0, 180).replace(/\s+/g, ' ')}…`;
+      const full = makeNode('div', 'team-wizard-brief-full', clean);
+      details.append(summary, full);
+      box.append(details);
+      return box;
+    };
+
+    const refreshDesign = async (force = false, scrollToBottom = false) => {
       if (!teamId || !dialog.open) return;
       try {
         const [{ agents }, { requests }, { proposals }] = await Promise.all([
@@ -283,44 +313,137 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
           api(`/api/team-hub/${encodeURIComponent(teamId)}/requests`),
           api(`/api/team-hub/${encodeURIComponent(teamId)}/proposals`),
         ]);
+        const recent = (requests ?? []).slice(0, 6).reverse();
+        const activeTraces = new Map();
+        const activeAssignments = recent
+          .filter(r => ['queued', 'running', 'waiting_for_human'].includes(r.state))
+          .map(r => r.assignments.find(a => ['running', 'queued', 'waiting_for_human', 'accepted'].includes(a.state)) ?? r.assignments[0])
+          .filter(Boolean);
+        await Promise.all(activeAssignments.map(async a => {
+          try {
+            const { trace } = await api(`/api/assistant-teams/${encodeURIComponent(teamId)}/assignments/${encodeURIComponent(a.id)}/trace`);
+            if (trace) activeTraces.set(a.id, trace);
+          } catch { /* trace may not exist yet */ }
+        }));
+
+        const pending = (proposals ?? []).filter(p => p.state === 'pending');
+        const hasActive = activeAssignments.length > 0;
+        const renderKey = JSON.stringify({
+          agents: agents.map(a => [a.role, a.profile?.name, a.coordinator]),
+          pending: pending.map(p => [p.id, p.state, p.summary, p.previews?.length]),
+          recent: recent.map(r => [r.id, r.state, r.assignments.map(a => [a.id, a.state, a.result?.length ?? 0, a.reason])]),
+          traces: [...activeTraces.entries()].map(([id, t]) => [id, t.toolCallCount, t.reason]),
+          tick: hasActive ? Math.floor(Date.now() / 5000) : 0,
+        });
+        if (!force && renderKey === lastRenderKey) return;
+        const wasFirst = lastRenderKey === '';
+        const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 120;
+        lastRenderKey = renderKey;
+        const prevScroll = body.scrollTop;
+
         rosterBar.replaceChildren(
           makeNode('span', 'team-muted', 'Current members: '),
           ...agents.map(a => makeNode('span', 'team-pill', `/${a.role}${a.profile ? ` · ${a.profile.name}` : ''}${a.coordinator ? ' (Chief)' : ''}`)),
         );
+
         feed.replaceChildren();
-        const pending = (proposals ?? []).filter(p => p.state === 'pending');
+        for (const req of recent) {
+          const item = makeNode('article', 'team-wizard-msg');
+          item.append(renderUserBrief(req.text));
+          const pub = req.assignments.find(a => !a.delegated && a.result);
+          const primary = pub ?? req.assignments.find(a => ['running', 'queued', 'waiting_for_human', 'accepted'].includes(a.state)) ?? req.assignments[0];
+          if (pub?.result) {
+            const reply = makeNode('div', 'team-wizard-msg-chief');
+            const replyBody = makeNode('div', 'team-wizard-msg-chief-body markdown');
+            renderMarkdown(replyBody, pub.result);
+            reply.append(replyBody);
+            if (primary?.id) {
+              const foot = makeNode('div', 'team-wizard-msg-foot');
+              const inspect = makeButton('Inspect execution →', `wizard-trace-${primary.id}`, () => void openExecutionDetailModal(teamId, primary.id));
+              inspect.className = 'ghost compact team-wizard-secondary-btn';
+              foot.append(inspect);
+              reply.append(foot);
+            }
+            item.append(reply);
+          } else {
+            const isActive = ['queued', 'running', 'waiting_for_human'].includes(req.state);
+            const liveCard = makeNode('div', `team-wizard-live-card${isActive ? ' is-active' : ''}`);
+            const headRow = makeNode('div', 'team-wizard-live-head');
+            if (isActive) headRow.append(makeNode('span', 'team-wizard-pulse', ''));
+            const stateTitle = req.state === 'running'
+              ? `${chiefName} is working…`
+              : req.state === 'queued'
+                ? `Queued for ${chiefName}…`
+                : req.state === 'waiting_for_human'
+                  ? `${chiefName} is waiting for your input`
+                  : `${chiefName} ${req.state.replaceAll('_', ' ')}`;
+            headRow.append(makeNode('strong', '', stateTitle));
+            const elapsed = formatElapsed(req.createdAt);
+            if (isActive && elapsed) headRow.append(makeNode('span', 'team-pill', elapsed));
+            if (primary?.id) {
+              const inspect = makeButton('Inspect live →', `wizard-trace-${primary.id}`, () => void openExecutionDetailModal(teamId, primary.id));
+              inspect.className = 'ghost compact team-wizard-live-btn team-wizard-secondary-btn';
+              headRow.append(inspect);
+            }
+            liveCard.append(headRow);
+
+            const trace = primary?.id ? activeTraces.get(primary.id) : null;
+            const reason = trace?.reason || primary?.reason;
+            if (reason) liveCard.append(makeNode('p', 'team-muted team-wizard-live-note', reason));
+
+            const calls = trace?.toolCalls ?? [];
+            if (calls.length) {
+              const steps = makeNode('div', 'team-wizard-live-steps');
+              for (const call of calls.slice(-4)) {
+                const dur = Number.isFinite(call.durationMs) ? ` (${(call.durationMs / 1000).toFixed(1)}s)` : '';
+                const line = makeNode('div', `team-wizard-live-step${call.ok === false ? ' is-error' : ''}`);
+                line.append(
+                  makeNode('span', 'team-wizard-step-mark', call.ok === false ? '✕' : '✓'),
+                  makeNode('code', 'team-inline-code', call.name),
+                  makeNode('span', 'team-muted', `${call.target ? ` ${call.target}` : ''}${dur}`),
+                );
+                steps.append(line);
+              }
+              liveCard.append(steps);
+            } else if (isActive) {
+              liveCard.append(makeNode('p', 'team-muted team-wizard-live-note', req.state === 'queued'
+                ? 'Starting Chief session and checking host readiness…'
+                : 'Inspecting host catalog and drafting your team blueprint…'));
+            }
+            item.append(liveCard);
+          }
+          feed.append(item);
+        }
         for (const proposal of pending) {
-          const cardEl = makeNode('article', 'team-proposal-card');
-          cardEl.append(makeNode('strong', '', `Proposed Blueprint · ${proposal.summary}`), makeNode('p', 'team-muted', proposal.rationale));
+          const cardEl = makeNode('article', 'team-proposal-card team-wizard-proposal');
+          const headEl = makeNode('div', 'team-wizard-proposal-head');
+          headEl.append(makeNode('span', 'team-pill state-done', 'Proposed Blueprint'), makeNode('strong', 'team-wizard-proposal-title', proposal.summary));
+          cardEl.append(headEl);
+          if (proposal.rationale) cardEl.append(makeNode('p', 'team-wizard-proposal-rationale', proposal.rationale));
           const list = makeNode('ul', 'team-proposal-changes');
-          for (const preview of proposal.previews ?? []) list.append(makeNode('li', '', preview.headline));
+          for (const preview of proposal.previews ?? []) list.append(makeNode('li', 'team-proposal-change-row', preview.headline));
           const actions = makeNode('div', 'team-row-actions');
           const approve = makeButton('Approve & Create Roles →', `wizard-approve-${proposal.id}`, async () => {
+            approve.disabled = true;
             await api(`/api/team-hub/${encodeURIComponent(teamId)}/proposals/${encodeURIComponent(proposal.id)}/decide`, { method: 'POST', body: { decision: 'approve' } });
             toast('Blueprint approved and applied live');
-            await refreshDesign();
+            await refreshDesign(true, true);
           });
           approve.className = 'primary compact';
           const reject = makeButton('Ask to adjust (Reject)', `wizard-reject-${proposal.id}`, async () => {
+            reject.disabled = true;
             await api(`/api/team-hub/${encodeURIComponent(teamId)}/proposals/${encodeURIComponent(proposal.id)}/decide`, { method: 'POST', body: { decision: 'reject' } });
-            await refreshDesign();
+            await refreshDesign(true, true);
           });
-          reject.className = 'ghost compact';
+          reject.className = 'ghost compact team-wizard-secondary-btn';
           actions.append(approve, reject);
           cardEl.append(list, actions);
           feed.append(cardEl);
         }
-        for (const req of (requests ?? []).slice(0, 6)) {
-          const item = makeNode('article', 'team-wizard-msg');
-          item.append(makeNode('div', 'team-wizard-msg-user', req.text));
-          const pub = req.assignments.find(a => !a.delegated && a.result);
-          if (pub?.result) item.append(makeNode('div', 'team-wizard-msg-chief', pub.result));
-          else item.append(makeNode('p', 'team-muted', `${chiefName} is ${req.state.replace('_', ' ')}…`));
-          feed.append(item);
-        }
-        if (!pending.length && !(requests ?? []).length) {
+        if (!pending.length && !recent.length) {
           feed.append(makeNode('p', 'team-muted', `Send your first design brief to ${chiefName} below, or skip ahead to connect services.`));
         }
+        body.scrollTop = (scrollToBottom || wasFirst || nearBottom) ? body.scrollHeight : prevScroll;
       } catch { /* retry next poll */ }
     };
 
@@ -332,7 +455,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
       try {
         await api(`/api/team-hub/${encodeURIComponent(teamId)}/assign`, { method: 'POST', body: { role: null, message } });
         input.value = '';
-        await refreshDesign();
+        await refreshDesign(true, true);
       } catch (err) { toast.error(err.message); }
       finally { sendBtn.disabled = false; }
     });
@@ -345,7 +468,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
     wrap.append(rosterBar, feed, form, footer);
     body.append(wrap);
     void refreshDesign();
-    pollTimer = setInterval(refreshDesign, 3500);
+    pollTimer = setInterval(refreshDesign, 2500);
   }
 
   async function renderStep3() {
@@ -355,7 +478,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
       [teamRec, agentsRes, catalogRes] = await Promise.all([
         api(`/api/assistant-teams/${encodeURIComponent(teamId)}`),
         api(`/api/assistant-teams/${encodeURIComponent(teamId)}/agents`),
-        api(`/api/assistant-teams/${encodeURIComponent(teamId)}/catalog`),
+        api(`/api/assistant-teams/${encodeURIComponent(teamId)}/catalog?light=1`),
       ]);
     } catch (err) { body.replaceChildren(makeNode('p', 'team-error-inline', err.message)); return; }
 

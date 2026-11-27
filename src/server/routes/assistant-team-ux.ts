@@ -18,6 +18,7 @@ import {
   attachOrDetachAssistantSecret,
   invalidateAssistantLiveSessions,
   listAssistantAttachedSecrets,
+  listNodeSecretCatalog,
   readAssignmentExecutionDetail,
   readTeamNodeCatalog,
 } from '../../assistant-teams/proposals.js';
@@ -191,15 +192,17 @@ export function registerAssistantTeamUxRoutes(): void {
   }));
 
   // Host catalog (metadata only, never secret values) + local Kokoro voice options for wizard & settings.
+  // Pass ?light=1 to skip slow harness/model probes when only host + voice options are needed (e.g. Wizard Step 3).
   app.get('/api/assistant-teams/:id/catalog', teamRoute(async (request, response) => {
     const auth = authSession(response);
     const teamId = teamIdSchema.parse(request.params.id);
     await requireTeamMember(auth, teamId);
-    const catalog = await readTeamNodeCatalog(teamId);
+    const light = request.query.light === '1';
     const host = await getClusterNode();
+    const catalog = light ? null : await readTeamNodeCatalog(teamId);
     return {
       host: { id: host.id, name: host.name },
-      catalog,
+      ...(catalog ? { catalog } : {}),
       voice: {
         local: localVoiceStatus(),
         kokoroVoices: KOKORO_VOICES.map(id => ({ id, label: voiceLabel(id) })),
@@ -227,11 +230,11 @@ export function registerAssistantTeamUxRoutes(): void {
     if (!project) throw new TeamError('Team project unavailable', 404);
     const host = await getClusterNode();
     const harness = profile.executionSettings?.harnessId ?? profile.engine;
-    const [inventory, preferences, attachedSecrets, catalog] = await Promise.all([
+    const [inventory, preferences, attachedSecrets, secretCatalog] = await Promise.all([
       asNode(() => resourceInventory({ projectPath: project.path, projectId: project.id, conversationId: profile.sessionId, ignoreAssistantPreferences: true })),
       assistantResourcePreferences(profile.id),
       listAssistantAttachedSecrets(profile, team.projectId),
-      readTeamNodeCatalog(teamId),
+      listNodeSecretCatalog(teamId),
     ]);
     const usable = (activation: Record<string, { enabled: boolean } | undefined> | undefined) => !activation || activation[harness] === undefined || Boolean(activation[harness]?.enabled);
     const skills = inventory.skills.filter(skill => skill.harnesses.includes(harness as never) && usable(skill.activation))
@@ -243,8 +246,8 @@ export function registerAssistantTeamUxRoutes(): void {
     let savedLogins: Array<{ profileId: string; label: string; sites: string[] }> = [];
     try {
       logins = await Promise.all(attachedLoginIds.map(profileId => loginState(profileId, profile)));
-      const listed = await browserOperation({ operation: 'profiles', args: { projectId: team.projectId, conversationId: profile.sessionId } }, await humanActor(auth), host.id) as { profiles: Array<{ id: string; label: string; sites?: string[] }> };
-      savedLogins = listed.profiles.filter(item => !attachedLoginIds.includes(item.id)).map(item => ({ profileId: item.id, label: item.label, sites: item.sites ?? [] }));
+      const localProfiles = await browserRuntime().profiles(team.projectId);
+      savedLogins = localProfiles.filter(item => !attachedLoginIds.includes(item.id)).map(item => ({ profileId: item.id, label: item.label, sites: item.sites ?? [] }));
     } catch { /* browser runtime may be idle */ }
     return {
       role,
@@ -254,14 +257,16 @@ export function registerAssistantTeamUxRoutes(): void {
         id: profile.id,
         name: profile.name,
         engine: profile.engine,
+        projectId: team.projectId,
+        sessionId: profile.sessionId,
         allowBrowser: profile.allowBrowser,
         allowTerminal: profile.allowTerminal,
         mcpServerNames: profile.mcpServerNames,
         executionSettings: profile.executionSettings,
       },
       attachedSecrets,
-      availableSecrets: catalog.secrets,
-      unusableSecrets: catalog.unusableSecrets,
+      availableSecrets: secretCatalog.secrets,
+      unusableSecrets: secretCatalog.unusableSecrets,
       mcpServers,
       skills,
       logins,
@@ -304,7 +309,7 @@ export function registerAssistantTeamUxRoutes(): void {
     if (input.secretAccountIds !== undefined) {
       const currentIds = new Set((await listAssistantAttachedSecrets(updatedProfile)).map(s => s.id));
       const wantedIds = new Set(input.secretAccountIds);
-      const usable = new Set((await readTeamNodeCatalog(teamId)).secrets.map(s => s.id));
+      const usable = new Set((await listNodeSecretCatalog(teamId)).secrets.map(s => s.id));
       for (const secretId of wantedIds) {
         if (!currentIds.has(secretId)) {
           if (!usable.has(secretId)) throw new TeamError('Selected secret is not usable in this team project', 400);
@@ -367,13 +372,20 @@ export function registerAssistantTeamUxRoutes(): void {
     }, await humanActor(auth), local.id) as { session: BrowserSessionView };
     const profileId = started.session.profileId;
     if (!profileId) throw new TeamError('Browser started without a saved profile', 500);
+    await browserOperation({
+      operation: 'command',
+      args: { sessionId: started.session.id, command: { action: 'takeControl', force: true } },
+    }, await humanActor(auth), local.id).catch(() => {});
     const db = await personalAssistantDatabase();
     db.prepare('INSERT OR IGNORE INTO personal_assistant_logins (assistant_id, profile_id, created_at) VALUES (?,?,?)').run(profile.id, profileId, new Date().toISOString());
     await syncMemberLoginGrants(profile, team.projectId);
     announceAssistantChanges();
     announceTeamChange(teamId);
     response.status(201);
-    return { login: await loginState(profileId, profile), session: { id: started.session.id, nodeId: local.id } };
+    return {
+      login: await loginState(profileId, profile),
+      session: { id: started.session.id, nodeId: local.id, projectId: team.projectId, engine: profile.engine, conversationId: profile.sessionId, appNodeId: local.id },
+    };
   }));
 
   // Reopen an attached browser profile live on Homeserver (e.g., QR / SSO re-auth).
@@ -392,7 +404,14 @@ export function registerAssistantTeamUxRoutes(): void {
       operation: 'start',
       args: { projectId: team.projectId, engine: profile.engine, conversationId: profile.sessionId, appNodeId: local.id, profileId, ...(url ? { url } : {}) },
     }, await humanActor(auth), local.id) as { session: BrowserSessionView };
-    return { login: await loginState(profileId, profile), session: { id: started.session.id, nodeId: local.id } };
+    await browserOperation({
+      operation: 'command',
+      args: { sessionId: started.session.id, command: { action: 'takeControl', force: true } },
+    }, await humanActor(auth), local.id).catch(() => {});
+    return {
+      login: await loginState(profileId, profile),
+      session: { id: started.session.id, nodeId: local.id, projectId: team.projectId, engine: profile.engine, conversationId: profile.sessionId, appNodeId: local.id },
+    };
   }));
 
   // Attach an existing saved browser profile to this team member.
