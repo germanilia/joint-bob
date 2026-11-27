@@ -172,7 +172,7 @@ function renderSecretsTab(parent, base, data, reload) {
       box.disabled = !data.editable;
       box.addEventListener('change', () => { if (box.checked) selected.add(secret.id); else selected.delete(secret.id); });
       const copy = makeNode('span', 'team-check-copy');
-      copy.append(makeNode('strong', '', secret.label), makeNode('small', 'team-muted', `${secret.provider} · ${secret.variableNames.join(', ') || 'no vars'}`));
+      copy.append(makeNode('strong', '', secret.label), makeNode('small', 'team-muted', `${secret.provider} · ${secret.variables.map(variable => variable.name).join(', ') || 'no vars'}`));
       row.append(box, copy);
       list.append(row);
     }
