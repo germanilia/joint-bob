@@ -15,6 +15,7 @@ import { conversationUsage, usageTotals } from "./usage-ledger.js";
 import { scheduleUsageIngest } from "./usage-ingest.js";
 import { sessionListingChanged } from "./session-listing-revisions.js";
 import { autoRespondListing } from "./conversation-auto-respond.js";
+import { measureOperation } from "./server/performance-diagnostics.js";
 
 export { defineHarness } from "./harnesses/contract.js";
 export type { HarnessAdapter, HarnessProject } from "./harnesses/contract.js";
@@ -213,8 +214,9 @@ export async function getHarnessRuntime(id: HarnessId): Promise<HarnessRuntime> 
 /** The models a harness lists on this node, read from its harness file. */
 export async function listHarnessModels(id: HarnessId): Promise<HarnessModel[]> {
   const adapter = getHarness(id);
-  if (!adapter.models) throw new Error(`${adapter.label} does not list models`);
-  return adapter.models();
+  const models = adapter.models;
+  if (!models) throw new Error(`${adapter.label} does not list models`);
+  return measureOperation(`harness.models.${id}`, () => models());
 }
 
 export function harnessForProvider(provider: string): HarnessAdapter {
