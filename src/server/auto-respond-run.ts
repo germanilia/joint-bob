@@ -8,6 +8,11 @@ import { withAutomationProfile } from "../provider-profiles/context.js";
 // Checking the agent's work can mean running a test suite; judging text alone is quick.
 const RESPONDER_TIMEOUT_MS = 20 * 60_000;
 const TEXT_ONLY_TIMEOUT_MS = 120_000;
+const STARTUP_TIMEOUT_MS = 120_000;
+
+export class AutoResponderStartupTimeoutError extends Error {
+  constructor() { super("The auto responder did not start within 2 minutes"); }
+}
 
 export interface AutoRespondRunInput {
   projectId: string;
@@ -36,6 +41,9 @@ export async function runAutoResponder(input: AutoRespondRunInput): Promise<stri
   const signal = AbortSignal.any([input.signal, deadline.signal]);
   const timer = setTimeout(() => deadline.abort(new Error("The auto responder timed out")), input.config.useTools ? RESPONDER_TIMEOUT_MS : TEXT_ONLY_TIMEOUT_MS);
   timer.unref();
+  const startupTimer = input.config.useTools ? setTimeout(() => deadline.abort(new AutoResponderStartupTimeoutError()), STARTUP_TIMEOUT_MS) : undefined;
+  startupTimer?.unref();
+  const onStarted = () => clearTimeout(startupTimer);
   let onAbort!: () => void;
   const stopped = new Promise<never>((_resolve, reject) => {
     onAbort = () => reject(deadline.signal.aborted ? deadline.signal.reason : new Error("Auto respond was cancelled"));
@@ -43,21 +51,23 @@ export async function runAutoResponder(input: AutoRespondRunInput): Promise<stri
   });
   try {
     const runInput = { ...input, signal, onStep: (step: string) => { if (!signal.aborted) input.onStep(step); } };
-    const run = withAutomationProfile({ accountId, profileId: providerProfileId ?? null, ...(providerPoolId ? { poolId: providerPoolId } : {}) }, () => executeAutoResponder(runInput, stopped));
+    const run = withAutomationProfile({ accountId, profileId: providerProfileId ?? null, ...(providerPoolId ? { poolId: providerPoolId } : {}) }, () => executeAutoResponder(runInput, stopped, onStarted));
     // Cleanup still runs inside the throwaway session, but the conversation need not wait for it.
     return await Promise.race([run, stopped]);
   } finally {
     clearTimeout(timer);
+    clearTimeout(startupTimer);
     signal.removeEventListener("abort", onAbort);
   }
 }
 
-async function executeAutoResponder(input: AutoRespondRunInput, stopped: Promise<never>): Promise<string> {
+async function executeAutoResponder(input: AutoRespondRunInput, stopped: Promise<never>, onStarted: () => void): Promise<string> {
   const cancelled = () => { if (input.signal.aborted) throw new Error("Auto respond was cancelled"); };
   const override = process.env.JOINT_BOB_AUTO_RESPONDER;
   if (override) {
     const module = await import(override) as { default: (input: AutoRespondRunInput) => Promise<string> };
     cancelled();
+    onStarted();
     return module.default(input);
   }
   const adapter = getHarness(input.config.harnessId as never);
@@ -88,7 +98,7 @@ async function executeAutoResponder(input: AutoRespondRunInput, stopped: Promise
         if (event.type === "error") reject(new Error(typeof event.error === "string" ? event.error : "The auto responder failed"));
       });
     });
-    const prompt = turn.prompt({ text: input.prompt, beforeStart: async () => cancelled() });
+    const prompt = turn.prompt({ text: input.prompt, beforeStart: async () => cancelled(), onStarted });
     await Promise.race([ended ? Promise.all([prompt, ended]) : prompt, stopped]);
     // After tool calls the reply spans several messages; the decision is in the last one.
     const last = [...session.messages].reverse().find((message) => message.role === "assistant" && message.text.trim());

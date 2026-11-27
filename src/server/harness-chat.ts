@@ -40,7 +40,7 @@ import { activeRoutingConfig, DEFAULT_ROUTING_CONFIG_ID, routingConfigDatabase, 
 import { applySystemControlDefault, enableSystemControl, type ConversationModel } from "./system-control.js";
 import { blockConversationGoal, cancelConversationGoal, getConversationGoal, goalPrompt, goalStatusMessage, parseBobGoalCommand, recordConversationGoalResponse, startConversationGoal, type ConversationGoal } from "../conversation-goals.js";
 import { attachAutoReplies, recordAutoReply, DEFAULT_AUTO_RESPOND_INSTRUCTIONS, DEFAULT_AUTO_RESPOND_STOP_INSTRUCTIONS, autoRespondInput, autoRespondConfigSchema, autoRespondMessage, disableAutoRespond, enableAutoRespond, getAutoRespond, parseAutoRespondDecision, recordAutoResponse, resetAutoRespondCount, responderPrompt, retryAutoRespond, stopAutoRespond, type AutoRespondConfig, type AutoRespondState, type AutoRespondStopKind } from "../conversation-auto-respond.js";
-import { runAutoResponder } from "./auto-respond-run.js";
+import { AutoResponderStartupTimeoutError, runAutoResponder } from "./auto-respond-run.js";
 import { ConversationOwnershipError } from "../conversation-ownership.js";
 import { buildHandoffContext } from "../handoff-context.js";
 import { getHarness, getHarnessRuntime, harnessForProvider, listHarnesses, listHarnessModels, listHarnessSessions } from "../harnesses.js";
@@ -1171,6 +1171,10 @@ async function runAutoResponse(connection: HarnessChatConnection): Promise<boole
   } catch (error) {
     if (controller.signal.aborted) return controller.signal.reason !== "user-stop";
     if (error instanceof ConversationOwnershipError) throw error;
+    if (error instanceof AutoResponderStartupTimeoutError) {
+      await stopAutoRespondFor(connection, "responder-failed", error.message);
+      return false;
+    }
     await retryAutoResponse(connection, error);
     return false;
   } finally {

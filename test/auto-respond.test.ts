@@ -475,17 +475,21 @@ for (const stall of ["preflight", "prompt", "cancel"] as const) {
       settings: () => ({ provider: config.provider, modelId: config.modelId, reasoning: config.thinkingLevel }),
       subscribe: () => () => {}, configure: async () => {},
       preflight: async () => { if (stall === "preflight") await pending.promise; },
-      prompt: async () => { prompts++; await pending.promise; },
+      prompt: async ({ onStarted }: { onStarted?: () => void }) => { prompts++; onStarted?.(); await pending.promise; },
       cancel: async () => { cancels++; if (stall === "cancel") await pending.promise; },
       isBusy: () => stall === "cancel" && prompts > 0,
       dispose: () => disposed.resolve(), messages: [],
     }) as unknown as HarnessSession);
     context.mock.method(runtime, "validateSettings", async () => {});
     const nativeSetTimeout = globalThis.setTimeout;
-    context.mock.method(globalThis, "setTimeout", ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => nativeSetTimeout(callback, ms === 20 * 60_000 ? 0 : ms, ...args)) as typeof setTimeout);
+    context.mock.method(globalThis, "setTimeout", ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+      const delay = ms === 2 * 60_000 ? 0 : ms === 20 * 60_000 && stall !== "preflight" ? 25 : ms;
+      return nativeSetTimeout(callback, delay, ...args);
+    }) as typeof setTimeout);
     const outcome = runAutoResponder({ projectId: "timeout-project", conversationId: "timeout-conversation", cwd: process.cwd(), creatorAccountId: "creator", config, prompt: "Decide", signal: new AbortController().signal, onStep: () => {} }).then(() => "completed", error => (error as Error).message);
     try {
-      assert.equal(await Promise.race([outcome, new Promise<string>(resolve => nativeSetTimeout(() => resolve(`still blocked on ${stall}`), 200))]), "The auto responder timed out");
+      const expected = stall === "preflight" ? "The auto responder did not start within 2 minutes" : "The auto responder timed out";
+      assert.equal(await Promise.race([outcome, new Promise<string>(resolve => nativeSetTimeout(() => resolve(`still blocked on ${stall}`), 200))]), expected);
     } finally {
       pending.resolve();
     }

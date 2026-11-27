@@ -3,7 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { getClusterNode } from "../cluster.js";
 import { getConversationOwnership } from "../conversation-ownership.js";
 import { listConversationSegments } from "../conversation-records.js";
-import { getAutoRespond, listActiveAutoResponders, retryAutoRespond, type AutoRespondState } from "../conversation-auto-respond.js";
+import { getAutoRespond, listActiveAutoResponders, type AutoRespondState } from "../conversation-auto-respond.js";
 import { cronStore } from "../cron.js";
 import { encodeAuthor } from "../message-authors.js";
 import { recordTurnFailure } from "../turn-failures.js";
@@ -23,17 +23,24 @@ export function observeAutoResponder(state: AutoRespondState): Promise<void> {
 }
 
 async function observe(initial: AutoRespondState): Promise<void> {
+  let wait = 5_000;
   for (;;) {
     const state = await getAutoRespond(initial.projectId, initial.conversationId);
     if (state?.status !== "active") return;
-    try { await attach(state); }
-    catch (error) {
-      console.warn("Auto reply recovery is waiting", error instanceof Error ? error.message : error);
-      await retryAutoRespond(state.projectId, state.conversationId, error instanceof Error ? error.message : String(error));
+    try {
+      await attach(state);
+      wait = 5_000;
+    } catch (error) {
+      // A failed attachment can coexist with a live decision on another connection.
+      // Do not change its revision or put that decision into retry backoff.
+      console.warn(`Auto reply recovery is waiting for ${state.projectId}:${state.conversationId}`, error instanceof Error ? error.message : error);
+      await delay(wait);
+      wait = Math.min(wait * 2, 60_000);
+      continue;
     }
     const current = await getAutoRespond(initial.projectId, initial.conversationId);
     if (current?.status !== "active") return;
-    await delay(5_000);
+    await delay(wait);
   }
 }
 

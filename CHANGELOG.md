@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.6 — 2026-11-27
+
+- **Auto respond:** A failed recovery connection no longer invalidates a decision running on another connection. A responder that can't start within two minutes stops and shows why instead of leaving the chat stuck on "checking the work".
+
 ## 2.346.5 — 2026-11-27
 
 - **Conversations:** Reopening a conversation that was just deleted, on this machine or another, now shows "Conversation not found", and the list drops it. Before, while its transcript file was still on disk, the page showed "Conversation record was deleted" and sent an error report on every reconnect.

@@ -35,8 +35,9 @@ the files the agent changed, looks at git status and diffs, and runs the tests o
 the agent says pass, before it answers. It is told not to change anything (no edits,
 commits, pushes, deploys or installs); that is a prompt rule, not a sandbox, because the
 harnesses expose tools differently. Untick **Let the responder read files and run
-commands** to make it judge the agent's text only. A responder with tools may take up to
-20 minutes per decision; one without, two.
+commands** to make it judge the agent's text only. If a tool-enabled responder cannot
+start within two minutes, Auto respond stops and shows why. Once started, it can use
+up to 20 minutes total for the decision. A text-only responder has two minutes total.
 
 The default instructions also tell it to check claims and, when a change cannot be checked
 with what exists (a UI, an API flow, an integration with no test), to ask the agent for a
