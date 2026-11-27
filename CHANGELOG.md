@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.12 — 2026-11-27
+
+- **Diagnostics:** The performance log now records how long each harness takes to check its installation, check its sign-in and list its models, so a slow or stuck harness list or automation editor can be traced to one harness and one step. Nothing else changes.
+
 ## 2.346.11 — 2026-11-27
 
 - **Assistant Teams:** Clicking **+ New team with Chief…** now opens the setup wizard immediately instead of stalling 10–14s on unreachable cluster peers, shows inline loading/retry feedback if cluster data is still loading, and coalesces concurrent `/api/team-hub` requests.
