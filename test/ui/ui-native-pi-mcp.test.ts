@@ -19,10 +19,12 @@ test("Resources supports native Pi OAuth or reports that the selected SDK needs 
     const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
     await page.goto(node.url);
     await page.getByTestId("login-username-input").fill(environment.username); await page.getByTestId("login-password-input").fill(environment.password); await page.getByTestId("login-submit-button").click();
-    await page.locator(".project-card", { hasText: "Internal Assistant" }).first().click();
-    await page.locator(".session-card", { hasText: "Thread-Based Agent Builder" }).first().click();
-    await page.getByTestId("chat-resources-button").click(); await page.getByTestId("resources-tab-mcp").click();
-    await page.getByTestId("managed-mcp-add").click();
+    await page.getByText("Internal Assistant", { exact: true }).waitFor();
+    await page.getByTestId("settings-open-button").click();
+    await page.getByTestId("settings-tab-resources").click();
+    await page.locator("#resourcesAutoActivate:enabled").waitFor();
+    await page.getByTestId("resources-tab-mcp").click();
+    await page.getByTestId("managed-mcp-add").click(); await page.getByTestId("managed-mcp-advanced").click();
     await page.getByTestId("managed-mcp-name").fill("native_fixture"); await page.getByTestId("managed-mcp-url").fill(`${fixture.origin}/mcp`);
     await page.getByTestId("managed-mcp-auth-mode").selectOption("native");
     await page.getByTestId("managed-mcp-install").click(); await page.getByTestId("confirm-accept-button").click();

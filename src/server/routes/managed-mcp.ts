@@ -54,6 +54,27 @@ app.post("/api/resources/mcp/managed", requireFeature(Feature.SETTINGS), (reques
   try { const servers = parseMcpServers(request.body); ownClient().store.install(servers); response.json({ installed: Object.keys(servers) }); }
   catch (error) { invalid(error, response); }
 });
+app.post("/api/resources/mcp/managed/connect", requireFeature(Feature.SETTINGS), async (request, response) => {
+  try {
+    const { url } = z.object({ url: z.string().trim().max(4096).url() }).strict().parse(request.body);
+    const endpoint = new URL(url);
+    const label = endpoint.hostname.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 85);
+    const stem = label || "mcp";
+    const client = ownClient(), servers = client.store.servers();
+    const installed = Object.entries(servers).find(([, server]) => server.authMode !== "native" && server.url === url);
+    if (installed) {
+      const [name] = installed;
+      const state = await client.status(name);
+      response.json(state.status === "connected" ? { serverName: name } : await client.start(name));
+      return;
+    }
+    const taken = new Set([...Object.keys(servers), JOINT_BOB_TOOL_SERVER].map(key => key.replaceAll("_", "-")));
+    let name = stem;
+    for (let index = 2; taken.has(name); index++) name = `${stem}-${index}`;
+    client.store.install(parseMcpServers({ mcpServers: { [name]: { url, authMode: "shared" } } }));
+    response.json(await client.start(name));
+  } catch (error) { invalid(error, response); }
+});
 app.delete("/api/resources/mcp/managed/:name", requireFeature(Feature.SETTINGS), async (request, response) => {
   try { const name = nameSchema.parse(request.params.name), client = ownClient(); await nativeAuth.cancelServer(actingAccount()!.accountId, name); await client.disconnect(name); client.store.remove(name); response.json({ ok: true }); }
   catch (error) { invalid(error, response); }
