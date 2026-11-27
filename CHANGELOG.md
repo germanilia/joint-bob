@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.0 — 2026-11-27
+
+- **Assistant Teams setup wizard:** Step 2 now shows a live activity card with elapsed timer, live tool-call trace steps, and an Inspect live button; renders Chief replies and Team Activity answers as formatted Markdown; orders messages chronologically with auto-scroll; and fixes checkbox wrapping and nested scroll clipping.
+- **Service connections & Live Browser Login:** Opening Connect services is now instant (skips full harness/model probes), guides you through Skill + API Secret, MCP Server, or Web / Live Browser Login, and opens an inline interactive browser viewer directly in the modal.
 ## 2.345.11 — 2026-11-27
 
 - **Auto respond:** The timeout now includes setup and cleanup. Stop and new messages no longer wait for a stalled responder to finish.
