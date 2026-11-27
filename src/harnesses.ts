@@ -42,6 +42,8 @@ function projectCacheKey(project: HarnessProject, harnessId: HarnessId): string 
  * switch read the project's transcripts from disk again.
  */
 const SCOPES_PER_PROJECT = 6;
+/** How long the answer of a walk over a transcript root serves the opens that follow it. */
+export const RECOVERY_WALK_KEPT_MS = 5_000;
 
 export class HarnessSessionCatalog<TAdapters extends readonly HarnessAdapter[]> {
   private entries = new Map<string, CatalogEntry>();
@@ -80,26 +82,55 @@ export class HarnessSessionCatalog<TAdapters extends readonly HarnessAdapter[]> 
     return sessions.length ? sessions.find((session) => session.id === sessionId) : this.recoverById(adapter, project, sessionId);
   }
 
+  /**
+   * Every transcript under an adapter's root, by conversation id. A conversation opened by an
+   * id the lists do not hold (its transcript is on another machine, or not written yet) was
+   * looked for by walking the whole root, once per open: on the homeserver ten opens a minute
+   * each walked it, 18 to 130 seconds apiece on a busy loop, and pages retried meanwhile
+   * (2026-11-27). Opens arriving during a walk share it, and its answer is kept for
+   * RECOVERY_WALK_KEPT_MS, so a transcript written during a walk is found by the next one.
+   */
+  private walks = new Map<string, { files: Promise<Map<string, string[]>>; finishedAt?: number }>();
+  private transcriptsById(adapter: HarnessAdapter): Promise<Map<string, string[]>> {
+    const root = adapter.sync.transcriptRoot();
+    const key = `${adapter.id}\n${root}`;
+    const kept = this.walks.get(key);
+    if (kept && (kept.finishedAt === undefined || Date.now() - kept.finishedAt < RECOVERY_WALK_KEPT_MS)) return kept.files;
+    const walk: { files: Promise<Map<string, string[]>>; finishedAt?: number } = { files: (async () => {
+      const byId = new Map<string, string[]>();
+      let entries;
+      try { entries = await readdir(root, { recursive: true, withFileTypes: true }); }
+      catch (error) {
+        if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return byId;
+        throw error;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const file = path.join(entry.parentPath, entry.name);
+        if (!adapter.paths.ownsTranscript(file)) continue;
+        const id = adapter.paths.sessionId(adapter.paths.ownsSession(file) ? file : `${adapter.id}:${file}`);
+        if (id === undefined) continue;
+        const files = byId.get(id);
+        if (files) files.push(file); else byId.set(id, [file]);
+      }
+      return byId;
+    })() };
+    this.walks.set(key, walk);
+    // A failed walk is not kept: the next open tries again.
+    walk.files.then(() => { walk.finishedAt = Date.now(); }, () => { if (this.walks.get(key) === walk) this.walks.delete(key); });
+    return walk.files;
+  }
+
   private async recoverById(adapter: HarnessAdapter, project: HarnessProject, sessionId: string): Promise<SessionSummary | undefined> {
-    let entries;
-    try { entries = await readdir(adapter.sync.transcriptRoot(), { recursive: true, withFileTypes: true }); }
-    catch (error) {
-      if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined;
-      throw error;
-    }
-    const files = entries
-      .filter((entry) => entry.isFile())
-      .map((entry) => path.join(entry.parentPath, entry.name))
-      .filter((file) => {
-        const sessionPath = adapter.paths.ownsSession(file) ? file : `${adapter.id}:${file}`;
-        return adapter.paths.ownsTranscript(file) && adapter.paths.sessionId(sessionPath) === sessionId;
-      });
+    const files = (await this.transcriptsById(adapter)).get(sessionId) ?? [];
     if (!files.length) return undefined;
     const sessions = await adapter.sessions.refresh(project, [], files);
     return sessions.find((session) => session.id === sessionId);
   }
 
   async refresh(projectId: string, changedFiles: string[]): Promise<void> {
+    // A transcript the watcher reports may be the one an open is looking for.
+    if (changedFiles.length) this.walks.clear();
     let entries = [...this.entries.entries()].filter(([, entry]) => entry.project.id === projectId);
     if (!changedFiles.length) {
       // A refresh that names no files rescans each scope it touches. Only the scope listed last
@@ -124,6 +155,7 @@ export class HarnessSessionCatalog<TAdapters extends readonly HarnessAdapter[]> 
   }
 
   clear(projectId?: string): void {
+    this.walks.clear();
     if (!projectId) { this.entries.clear(); return; }
     for (const [key, entry] of this.entries) if (entry.project.id === projectId) this.entries.delete(key);
   }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.6 — 2026-11-27
+
+- **Performance:** Opening a conversation that is not in its project's list (for example one whose transcript is on another machine) no longer searches every transcript folder once per open. Opens arriving together share one search, and its result serves the opens of the next five seconds. On a busy machine each search took from 18 seconds to over two minutes, and pages retrying made it worse.
+
 ## 2.345.5 — 2026-11-27
 
 - **Performance:** A machine catching up on a cluster's changes no longer makes the machine it asks read and sort that cluster's whole change log for every page of 100 changes. On a machine holding a large log this took about a fifth of its processor and slowed everything else, including opening conversations.

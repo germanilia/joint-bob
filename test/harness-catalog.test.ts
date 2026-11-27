@@ -262,3 +262,41 @@ test("a watcher event published during refresh is applied incrementally", async 
   await catalog.refresh(project.id, [forkPath]);
   assert.deepEqual((await catalog.list(project)).map((session) => session.path).sort(), [sourcePath, forkPath].sort());
 });
+
+test("opens looking for a conversation by id share one walk of the transcript root", async () => {
+  const { RECOVERY_WALK_KEPT_MS } = await import("../src/harnesses.js");
+  const root = await mkdtemp(path.join(os.tmpdir(), "jb-recover-walk-"));
+  await mkdir(path.join(root, "folder"));
+  const [known, missing, late, later] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const file = (id: string) => path.join(root, "folder", `${id}.jsonl`);
+  await writeFile(file(known), "{}\n");
+  let walks = 0;
+  const adapter = {
+    id: "walk",
+    paths: {
+      ownsSession: (sessionPath: string) => sessionPath.startsWith("walk:"),
+      // Each walk asks this once about the transcript that is there from the start.
+      ownsTranscript: (candidate: string) => { if (candidate === file(known)) walks += 1; return candidate.endsWith(".jsonl") && candidate.startsWith(root); },
+      sessionId: (sessionPath: string) => path.basename(sessionPath, ".jsonl"),
+    },
+    sync: { transcriptRoot: () => root },
+    sessions: { refresh: async (_project: unknown, _previous: unknown, files: string[]) => files.map((found) => ({ id: path.basename(found, ".jsonl"), path: `walk:${found}` })) },
+  };
+  const catalog = new HarnessSessionCatalog([adapter] as never);
+  const find = (id: string) => catalog.find({ id: "p", name: "p", path: root } as never, "walk" as never, `draft:walk:${id}`, id);
+  const realNow = Date.now;
+  try {
+    const found = await Promise.all([find(known), find(missing), find(known)]);
+    assert.deepEqual(found.map((session) => session?.id), [known, undefined, known]);
+    assert.equal(walks, 1, "three opens at once walk the root once");
+
+    await writeFile(file(late), "{}\n");
+    assert.equal(await find(late), undefined, "an answer just made serves the opens right after it");
+    await catalog.refresh("p", [file(late)]);
+    assert.equal((await find(late))?.id, late, "a transcript the watcher reports is looked for again");
+
+    await writeFile(file(later), "{}\n");
+    Date.now = () => realNow() + RECOVERY_WALK_KEPT_MS + 1;
+    assert.equal((await find(later))?.id, later, "and the answer is made again once its time is over");
+  } finally { Date.now = realNow; await rm(root, { recursive: true, force: true }); }
+});
