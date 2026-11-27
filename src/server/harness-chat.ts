@@ -1618,12 +1618,16 @@ async function applyQueueCommand(connection: HarnessChatConnection, message: Ret
   if (message.type === "forceStartQueuedPrompt") {
     if (!message.queueId || !message.queueRevision) throw new Error("Queued prompt force start is incomplete");
     const key = queueKey(connection);
-    const starting = startingIds.has(message.queueId) ? listQueuedPrompts(key).find(({ id }) => id === message.queueId) : undefined;
+    const listed = listQueuedPrompts(key).find(({ id }) => id === message.queueId);
+    const starting = startingIds.has(message.queueId) ? listed : undefined;
+    let revision = message.queueRevision;
+    // A restart cut this start off and no dispatch here owns it: starting it now is the person's choice to retry.
+    if (!starting && listed?.dispatchState === "starting" && listed.revision === revision && resetQueuedPromptAttempt(listed.id)) revision += 1;
     // beginQueuedPrompt increments the revision before onStarted claims it.
     // Accept either the attached page's pending revision or a reconnect's starting revision.
     const current = starting
       ? message.queueRevision === starting.revision || message.queueRevision === starting.revision - 1
-      : prioritizeQueuedPrompt(key, message.queueId, message.queueRevision);
+      : prioritizeQueuedPrompt(key, message.queueId, revision);
     if (!current) {
       refreshHarnessPromptQueue(connection);
       throw new Error("Queued message changed. Its status has been updated; try again if it is still queued.");
@@ -1635,7 +1639,8 @@ async function applyQueueCommand(connection: HarnessChatConnection, message: Ret
   if (message.type === "editQueuedPrompt") {
     if (!message.queueId || !message.queueRevision || message.message === undefined) throw new Error("Queued prompt edit is incomplete");
     const queued = listQueuedPrompts(queueKey(connection)).find(({ id }) => id === message.queueId);
-    if (!queued || queued.dispatchState !== "pending" || startingIds.has(queued.id)) throw new Error("Queued prompt changed; refresh and try again");
+    // A "starting" prompt no dispatch here owns was cut off by a restart; editing it is how the person settles it.
+    if (!queued || startingIds.has(queued.id)) throw new Error("Queued prompt changed; refresh and try again");
     if (!message.message.trim()) throw new Error("Queued prompt cannot be empty");
     if (message.queueSettings) await (await getHarnessRuntime(selectedHarness(message.queueSettings))).validateSettings(runtimeSettings(message.queueSettings));
     const added = message.images?.length || message.files?.length ? await editedPromptWithNewAttachments(connection, queued, message.message, message.images ?? [], message.files ?? []) : null;

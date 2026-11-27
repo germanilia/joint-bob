@@ -290,6 +290,38 @@ test("force start hides errors from canceled Pi auto-compaction", async (context
   } finally { process.env.JOINT_BOB_TEST_ENGINE_LOG = engineLog; }
 });
 
+// fix: an update restart left a person's "yes" starting; the drain asked to edit or cancel it, but Edit and Force start were refused (homeserver, 2026-11-27).
+for (const action of ["editQueuedPrompt", "forceStartQueuedPrompt"] as const) {
+  test(`${action} runs a prompt whose start a restart cut off`, async (context) => {
+    const opened = openChat(baseUrl, fixture.cookie, fixture.projectId, "new");
+    sockets.push(opened.socket);
+    await waitForChatSession(opened);
+    const sessionId = String(opened.messages.find((frame) => frame.type === "ready")!.sessionId);
+    const { harnessSessions } = await import("../src/server/harness-sessions.js");
+    const { harnessChatConnections, handleHarnessChatMessage, drainHarnessPromptQueue } = await import("../src/server/harness-chat.js");
+    const { beginQueuedPrompt, enqueuePrompt, listQueuedPrompts } = await import("../src/prompt-queue.js");
+    const shared = [...harnessSessions.values()].find((candidate) => candidate.session.id === sessionId)!;
+    const connection = [...harnessChatConnections].find((candidate) => candidate.shared === shared)!;
+    const prompts: string[] = [];
+    context.mock.method(shared.session, "prompt", async (input) => { prompts.push(input.text); input.onStarted?.(); });
+    const engineLog = process.env.JOINT_BOB_TEST_ENGINE_LOG;
+    delete process.env.JOINT_BOB_TEST_ENGINE_LOG;
+    try {
+      const key = `${fixture.projectId}:${sessionId}`;
+      // The process stopped between beginQueuedPrompt and the claim, so no dispatch here owns the start.
+      const queued = enqueuePrompt(key, "yes", "yes", { messageText: "yes", promptSuffix: "", displaySuffix: "", attachmentPaths: [] });
+      assert.ok(beginQueuedPrompt(queued.id, queued.revision));
+      await assert.rejects(drainHarnessPromptQueue(connection), /start is uncertain/);
+      assert.deepEqual(prompts, []);
+      const interrupted = listQueuedPrompts(key)[0];
+      await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: action, queueId: interrupted.id, queueRevision: interrupted.revision, message: "yes" })));
+      await drainHarnessPromptQueue(connection);
+      assert.deepEqual(prompts, ["yes"]);
+      assert.deepEqual(listQueuedPrompts(key), []);
+    } finally { process.env.JOINT_BOB_TEST_ENGINE_LOG = engineLog; }
+  });
+}
+
 for (const outcome of ["cancelled", "started", "cancel-failed"] as const) {
   test(`force starting an in-flight Pi queue entry handles ${outcome} without duplicate dispatch`, async (context) => {
     const opened = openChat(baseUrl, fixture.cookie, fixture.projectId, "new");
