@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, type Stats } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { runtimeExec } from "./account-runtime.js";
@@ -427,11 +427,31 @@ async function lockIntegration(indexLock: string, operationId: string, recoverin
   }
 }
 
-async function candidateFilesMatch(git: Git, candidate: LocalWorktreeCandidate, commit: string): Promise<boolean> {
+/**
+ * Whether the candidate's files on disk are exactly the commit's, a path the commit lacks being absent.
+ * Reads the files rather than diffing through the project index, which has no entry for a path the task adds.
+ */
+async function candidateFilesMatch(git: Git, projectPath: string, candidate: LocalWorktreeCandidate, commit: string): Promise<boolean> {
   if (!candidate.paths.length) return true;
-  const result = await git(["diff", "--quiet", commit, "--", ...candidate.paths]);
-  if (result.code > 1) throw new Error(`Cannot verify installed files: ${result.stderr.trim()}`);
-  return result.code === 0;
+  const expected = new Map<string, { mode: string; blob: string }>();
+  for (const entry of (await output(git, ["ls-tree", "-r", "-z", commit, "--", ...candidate.paths])).split("\0").filter(Boolean)) {
+    const [mode, , blob] = entry.slice(0, entry.indexOf("\t")).split(" ");
+    expected.set(entry.slice(entry.indexOf("\t") + 1), { mode, blob });
+  }
+  const present: string[] = [];
+  for (const file of candidate.paths) {
+    let stat: Stats | null;
+    try { stat = await fs.lstat(path.join(projectPath, file)); }
+    catch (error) { if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error; stat = null; }
+    if (stat?.isDirectory()) stat = null;
+    const wanted = expected.get(file);
+    if (!wanted || !stat) { if (wanted || stat) return false; continue; }
+    if (!stat.isFile() || ((stat.mode & 0o100) !== 0) !== (wanted.mode === "100755")) return false;
+    present.push(file);
+  }
+  if (!present.length) return true;
+  const hashes = (await output(git, ["hash-object", "--", ...present])).split("\n");
+  return present.every((file, index) => hashes[index] === expected.get(file)!.blob);
 }
 
 async function prepareInstallation(git: Git, projectPath: string, candidate: LocalWorktreeCandidate, index: string, shadow: string, journalFile: string): Promise<LocalIntegrationJournal> {
@@ -440,7 +460,7 @@ async function prepareInstallation(git: Git, projectPath: string, candidate: Loc
   if (candidate.paths.length) {
     const dirty = await output(git, ["status", "--porcelain", "--untracked-files=all", "--", ...candidate.paths]);
     if (candidate.reconciliation) {
-      if (!await candidateFilesMatch(git, candidate, candidate.commit)) throw new Error("Synced files changed before reconciliation; no history was advanced");
+      if (!await candidateFilesMatch(git, projectPath, candidate, candidate.commit)) throw new Error("Synced files changed before reconciliation; no history was advanced");
       if ((await git(["diff", "--cached", "--quiet", candidate.targetCommit, "--", ...candidate.paths])).code !== 0) throw new Error("Staged edits overlap reconciliation; no history was advanced");
     } else if (dirty) throw new Error(`Protected uncommitted edits overlap this task:\n${dirty}`);
   }
@@ -460,8 +480,8 @@ async function finishInstallation(git: Git, projectPath: string, journal: LocalI
   const env = { GIT_INDEX_FILE: files.shadow };
   const head = await localMain(git, projectPath);
   if (head !== candidate.targetCommit && head !== candidate.commit) throw new Error("Main changed during integration; inspect the retained operation before recovery");
-  const before = await candidateFilesMatch(git, candidate, candidate.targetCommit);
-  const after = await candidateFilesMatch(git, candidate, candidate.commit);
+  const before = await candidateFilesMatch(git, projectPath, candidate, candidate.targetCommit);
+  const after = await candidateFilesMatch(git, projectPath, candidate, candidate.commit);
   const indexHash = hashBytes(await fs.readFile(files.index));
   if (head === candidate.commit && after && (await git(["diff-index", "--cached", "--quiet", journal.installedIndexTree, "--"])).code === 0) {
     journal.phase = "committed"; await durableJournal(files.journal, journal); return;
@@ -473,7 +493,7 @@ async function finishInstallation(git: Git, projectPath: string, journal: LocalI
     await fs.copyFile(`${files.shadow}.before`, files.shadow);
     journal.phase = "installing"; await durableJournal(files.journal, journal);
     await output(git, ["read-tree", "-m", "-u", candidate.targetCommit, candidate.commit], { env });
-    if (!await candidateFilesMatch(git, candidate, candidate.commit)) throw new Error("Installed files differ from the verified candidate; recovery retained");
+    if (!await candidateFilesMatch(git, projectPath, candidate, candidate.commit)) throw new Error("Installed files differ from the verified candidate; recovery retained");
   }
   if (await output(git, ["write-tree"], { env }) !== journal.installedIndexTree) throw new Error("Prepared index differs from the recorded integration");
   for (const file of candidate.paths) {
@@ -491,7 +511,7 @@ async function finishInstallation(git: Git, projectPath: string, journal: LocalI
   await fs.rename(files.shadow, files.index);
   const directory = await fs.open(path.dirname(files.index), "r");
   try { await directory.sync(); } finally { await directory.close(); }
-  if (await localMain(git, projectPath) !== candidate.commit || !await candidateFilesMatch(git, candidate, candidate.commit)) throw new Error("Integration changed before final verification; worktree retained");
+  if (await localMain(git, projectPath) !== candidate.commit || !await candidateFilesMatch(git, projectPath, candidate, candidate.commit)) throw new Error("Integration changed before final verification; worktree retained");
   journal.phase = "committed"; await durableJournal(files.journal, journal);
 }
 
