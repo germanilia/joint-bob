@@ -46,11 +46,20 @@ function requestFailure(error, path, options, status) {
 // hears of it. Writes are never repeated: they may have reached the server.
 const RETRY_DELAYS_MS = [1_000, 3_000, 8_000];
 
+// The relay or a reverse proxy answers 502/503 in plain text or HTML when it cannot reach the app,
+// as during an update restart. The app's own errors are JSON.
+function proxyCouldNotReachApp(response) {
+  return [502, 503].includes(response.status) && !(response.headers.get("Content-Type") || "").includes("application/json");
+}
+
 async function fetchWithRetry(path, init) {
   const read = ["GET", "HEAD"].includes((init.method || "GET").toUpperCase());
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await fetch(path, init);
+      const response = await fetch(path, init);
+      if (!read || !proxyCouldNotReachApp(response)) return response;
+      await response.body?.cancel();
+      throw new TypeError(`The app did not answer behind its proxy (HTTP ${response.status})`);
     } catch (error) {
       if (!read || error.name !== "TypeError" || init.signal?.aborted || attempt === RETRY_DELAYS_MS.length) throw error;
       // A cancellation during the wait ends it; the next fetch then rejects with the caller's reason.

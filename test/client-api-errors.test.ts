@@ -13,7 +13,7 @@ function client(fetch: (...args: any[]) => any, duringWait?: () => void) {
   window.addEventListener("joint-bob-client-error", (event) => alerts.push((event as CustomEvent).detail));
   let signedOut = false;
   const requests = runInNewContext(`${source}\n({ api, apiBlob, apiLines })`, {
-    fetch, Error, window, CustomEvent, Event, clearTimeout,
+    fetch, Error, TypeError, window, CustomEvent, Event, clearTimeout,
     setTimeout: (done: () => void, ms: number) => {
       waits.push(ms);
       if (!duringWait) return setTimeout(done, 0);
@@ -137,6 +137,35 @@ test("a read that never gets an answer is reported once, after the retries", asy
   await assert.rejects(request.api("/api/projects"), /GET \/api\/projects: No response was received/);
   assert.equal(calls, 4);
   assert.equal(request.alerts.length, 1);
+});
+
+test("a proxy that cannot reach the app is treated like no answer for reads", async () => {
+  let calls = 0;
+  const restarting = client(async () => {
+    if (++calls < 3) return new Response("The machine did not answer through the relay.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    return Response.json({ ok: true });
+  });
+  assert.deepEqual(await restarting.api("/api/harnesses"), { ok: true });
+  assert.equal(calls, 3);
+  assert.deepEqual([...restarting.logs, ...restarting.alerts], []);
+
+  const down = client(async () => new Response("<html>502 Bad Gateway</html>", { status: 502 }));
+  await assert.rejects(down.api("/api/team-hub"), (failure: any) => {
+    assert.match(failure.message, /GET \/api\/team-hub: No response was received/);
+    assert.equal(failure.status, 0);
+    return true;
+  });
+  assert.equal(down.waits.length, 3);
+
+  let writes = 0;
+  const write = client(async () => { writes++; return new Response("Bad Gateway", { status: 502 }); });
+  await assert.rejects(write.api("/api/preferences", { method: "PUT" }), /HTTP 502|Bad Gateway/);
+  assert.equal(writes, 1);
+
+  let appCalls = 0;
+  const app = client(async () => { appCalls++; return Response.json({ error: "The machine that hosts the team refused it (500)" }, { status: 502 }); });
+  await assert.rejects(app.api("/api/team-hub"), /hosts the team refused it/);
+  assert.equal(appCalls, 1);
 });
 
 test("a write that gets no answer is never sent again", async () => {

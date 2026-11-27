@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.3 — 2026-11-27
+
+- **Connection:** When an update restart briefly takes Joint Bob offline and the page reaches it through the relay or a reverse proxy, a read that the proxy answers with 502 or 503 is now retried and then folded into the single connection notice, as a read that gets no answer already was. Before, each one showed an error such as "Could not complete GET /api/harnesses: HTTP 502" and sent an error report. Errors that Joint Bob itself returns, and writes, are unchanged.
+
 ## 2.346.2 — 2026-11-27
 
 - **Performance (Linux):** A new file in a conversation transcript folder no longer makes the server read that folder's whole listing again. On a machine with thousands of transcripts in one folder this took over a tenth of the server's processor while agents were running; creating 300 files in a folder of 6,600 went from 2.5 seconds of processor time to 11 milliseconds.
