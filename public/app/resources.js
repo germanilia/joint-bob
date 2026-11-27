@@ -931,7 +931,7 @@ function renderShareBar() {
   const local = entry?.inventory;
   bar.hidden = !view.ready || !(entry?.node.local || entry?.node.manageable) || !["skills", "mcp", "tools", "plugins"].includes(view.tab) || !local;
   if (bar.hidden) return;
-  if (view.tab === "mcp" && !view.nodeId) bar.append(managedMcpSetup(async () => { await loadInventory(); render(); }, mcpAuthProject() ? { projectId: mcpAuthProject() } : {}));
+  if (view.tab === "mcp" && !view.nodeId) bar.append(managedMcpSetup(local.harnesses.filter(({ mcp }) => mcp), async () => { await loadInventory(); render(); }, mcpAuthProject() ? { projectId: mcpAuthProject() } : {}));
   const line = document.createElement("div");
   line.className = "resources-share-line";
   if (view.tab === "tools") {

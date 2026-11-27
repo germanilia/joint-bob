@@ -33,7 +33,7 @@ function input(label, key, placeholder, multiline = false) {
   if (multiline) control.rows = 3;
   control.addEventListener("input", () => { draft[key] = control.value; }); field.append(control); return field;
 }
-export function managedMcpSetup(changed, scope = {}) {
+export function managedMcpSetup(harnesses, changed, scope = {}) {
   selectScope(scope);
   const section = document.createElement("section"); section.className = "resources-add"; section.dataset.testid = "managed-mcp-setup";
   const actions = document.createElement("div"); actions.className = "resources-share-line";
@@ -51,14 +51,16 @@ export function managedMcpSetup(changed, scope = {}) {
     }, changed)));
   section.append(actions);
   if (expanded) {
-    const hint = document.createElement("p"); hint.textContent = "Shared connections work with Claude, Pi and Kiro. Native Pi OAuth uses the selected Pi harness, no plugin installation needed. Servers and sign-ins belong to your account on this machine. Start a new conversation after installation.";
+    const supported = new Intl.ListFormat("en").format(harnesses.map(({ label }) => label));
+    const hint = document.createElement("p"); hint.textContent = `Shared connections work with ${supported}. Native Pi OAuth uses the selected Pi harness, no plugin installation needed. Servers and sign-ins belong to your account on this machine. Start a new conversation after installation.`;
     const form = document.createElement("form"); form.dataset.testid = "managed-mcp-form";
     form.append(hint, input("Server name", "name", "figma"), input("Remote MCP URL", "url", "https://mcp.figma.com/mcp"),
       input("Or import multiple servers as MCP JSON. Stdio commands run as your account.", "json", '{"mcpServers":{"figma":{"url":"https://mcp.figma.com/mcp"},"local":{"command":"node","args":["/path/server.mjs"]}}}', true));
-    const install = button(draft.authMode === "native" ? "Install for Pi" : "Install for all three agents", "managed-mcp-install", () => {}); install.type = "submit";
+    const installLabel = () => draft.authMode === "native" ? "Install for Pi" : "Install shared connection";
+    const install = button(installLabel(), "managed-mcp-install", () => {}); install.type = "submit";
     const mode = document.createElement("select"); mode.dataset.testid = "managed-mcp-auth-mode"; mode.setAttribute("aria-label", "MCP sign-in mode");
-    mode.replaceChildren(new Option("Shared connection · Claude, Pi and Kiro", "shared"), new Option("Native Pi OAuth · Pi only", "native"));
-    mode.value = draft.authMode; mode.addEventListener("change", () => { draft.authMode = mode.value; install.textContent = mode.value === "native" ? "Install for Pi" : "Install for all three agents"; });
+    mode.replaceChildren(new Option(`Shared connection · ${supported}`, "shared"), new Option("Native Pi OAuth · Pi only", "native"));
+    mode.value = draft.authMode; mode.addEventListener("change", () => { draft.authMode = mode.value; install.textContent = installLabel(); });
     form.append(mode, install); form.addEventListener("submit", event => {
       event.preventDefault();
       void perform(async () => {

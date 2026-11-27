@@ -3,7 +3,7 @@
 Open **Settings → Resources → MCP servers → Add MCP servers** on the machine where the conversation runs.
 
 - Enter a name and a remote streamable HTTP URL, or paste a JSON object containing several `mcpServers` entries.
-- Choose shared connections for all three agents, or **Native Pi OAuth · Pi only**, then install and confirm. Neither option requires an external Pi plugin.
+- Choose **Shared connection** for Pi, Claude, Kiro and Google Antigravity, or **Native Pi OAuth · Pi only**, then install and confirm. Neither option requires an external Pi plugin.
 - Start a new conversation after installing. Existing Pi conversations can use `/reload` to reload tools.
 
 For Figma, use the name `figma` and URL `https://mcp.figma.com/mcp`. If a native Figma server is already installed, remove the duplicate or choose a different name. Existing native/plugin MCP configurations and their Claude-only sign-ins remain separate; importing a server does not extract or copy native OAuth credentials.
@@ -12,7 +12,7 @@ For Figma, use the name `figma` and URL `https://mcp.figma.com/mcp`. If a native
 
 Choose **Check connections**, then **Sign in** beside the server. Approve access in the new browser tab, return and choose **Done**. If the browser ends at a localhost address it cannot reach, paste that full redirect address into Joint Bob's sign-in field and choose **Done**. Do not paste this address into a conversation.
 
-The saved sign-in works for Claude, Pi and Kiro running for that same user on that same machine. Another user, or the same user on another machine, must sign in separately. Tokens and installed definitions live in node-local, per-account storage and are not replicated. Agents receive a conversation-scoped capability, not the upstream OAuth credentials.
+The saved shared sign-in works for Pi, Claude, Kiro and Google Antigravity running for that same user on that same machine. Another user, or the same user on another machine, must sign in separately. Tokens and installed definitions live in node-local, per-account storage and are not replicated. Agents receive a conversation-scoped capability, not the upstream OAuth credentials.
 
 After signing in, reopen an existing native harness conversation or use `/reload` in Pi if it previously reported a connection error. Sign out closes the shared connection and removes that account's saved OAuth credentials. Removing a shared-mode server removes its saved shared sign-in too. Signing out does not revoke static headers explicitly supplied in the server definition.
 
