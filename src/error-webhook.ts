@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { registerLogSecrets } from "../scripts/log-masking.mjs";
 import { z } from "zod";
 import { save, settingsDatabase, value } from "./settings-store.js";
 
 const KEY = "errorWebhook";
+const QUIET_WINDOW_MS = 24 * 60 * 60_000;
 const INLINE_LIMIT = 3_800;
 const ATTACHMENT_LIMIT = 128_000;
 const URL_ERROR = "Enter an HTTPS webhook URL without a username, password, or fragment";
@@ -55,6 +57,29 @@ export function updateErrorWebhookSettings(input: unknown) {
 export function errorWebhookDestination(): URL | null {
   const { stored, url } = config();
   return stored.enabled ? url : null;
+}
+
+/** Refresh known repeats even at the rate limit, but do not start a quiet window for a rate-limited first report. */
+export function claimErrorWebhookReport(channel: ErrorWebhookPayload["channel"], signature: string, now: number, canSend: boolean): boolean {
+  const db = settingsDatabase();
+  const fingerprint = createHash("sha256").update(`${channel}:${signature}`).digest("hex");
+  const cutoff = now - QUIET_WINDOW_MS;
+  if (!canSend) {
+    db.prepare(`UPDATE error_webhook_seen SET last_seen_at = max(last_seen_at, ?)
+      WHERE fingerprint = ? AND last_seen_at > ?`).run(now, fingerprint, cutoff);
+    return false;
+  }
+  // Claim before sending so concurrent reports and restarts cannot both send the first alert.
+  const row = db.prepare(`
+    INSERT INTO error_webhook_seen (fingerprint, last_seen_at, occurrences) VALUES (?, ?, 1)
+    ON CONFLICT(fingerprint) DO UPDATE SET
+      occurrences = CASE WHEN last_seen_at <= ? THEN 1 ELSE occurrences + 1 END,
+      last_seen_at = max(last_seen_at, excluded.last_seen_at)
+    RETURNING occurrences
+  `).get(fingerprint, now, cutoff) as { occurrences: number };
+  if (row.occurrences !== 1) return false;
+  db.prepare("DELETE FROM error_webhook_seen WHERE last_seen_at <= ?").run(cutoff);
+  return true;
 }
 
 export interface ErrorWebhookPayload {

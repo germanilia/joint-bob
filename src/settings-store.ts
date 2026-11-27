@@ -27,6 +27,11 @@ export function settingsDatabase(): DatabaseSync {
       is_secret INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS error_webhook_seen (
+      fingerprint TEXT PRIMARY KEY NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      occurrences INTEGER NOT NULL
+    );
   `);
   const seed = database.prepare("INSERT OR IGNORE INTO node_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?)");
   const now = new Date().toISOString();
