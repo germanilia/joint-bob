@@ -9,7 +9,7 @@ import { freePort } from "./dev-nodes.js";
 import { configure, environment, gatedClaude, killNode, login, openChat, queuedTexts, spawnNode, temporaryRoot, waitFor, waitForInvocations } from "./queued-prompt-harness.js";
 import { openNodeDatabase } from "../src/node-database.js";
 
-for (const stopped of [false, true]) test(`a queued prompt survives a node crash and ${stopped ? "stays paused after Stop" : "runs when the node comes back"}`, async () => {
+for (const state of ["pending", "paused", "uncertain"] as const) test(`a queued prompt in the ${state} state can recover after a node crash`, async () => {
   const root = await temporaryRoot("joint-bob-queue-restart-");
   const previous = { ...process.env };
   Object.assign(process.env, environment(root));
@@ -31,7 +31,7 @@ for (const stopped of [false, true]) test(`a queued prompt survives a node crash
     socket.send(JSON.stringify({ type: "prompt", message: "second" }));
     await waitFor(opened.messages, () => opened.messages.some((message) => message.type === "userMessage" && message.queued === true && message.text === "second"));
 
-    if (stopped) {
+    if (state === "paused") {
       socket.send(JSON.stringify({ type: "stop" }));
       await waitFor(opened.messages, () => opened.messages.some((message) => message.type === "stopped"));
     }
@@ -39,6 +39,12 @@ for (const stopped of [false, true]) test(`a queued prompt survives a node crash
     socket.terminate();
     await killNode(node);
     node = undefined;
+    if (state === "uncertain") {
+      // This is what remains if the node dies between beginQueuedPrompt and onStarted.
+      const db = openNodeDatabase(path.join(root, "data", "node.db"));
+      try { assert.equal(db.prepare("UPDATE queued_prompts SET revision = revision + 1, prompt = json_set(prompt, '$.revision', revision + 1, '$.dispatchState', 'starting')").run().changes, 1); }
+      finally { db.close(); }
+    }
 
     const restartPort = await freePort();
     const restartUrl = `http://127.0.0.1:${restartPort}`;
@@ -48,7 +54,7 @@ for (const stopped of [false, true]) test(`a queued prompt survives a node crash
     socket = reopened.socket;
     await waitFor(reopened.messages, () => reopened.messages.some((message) => message.type === "queuedPrompts"));
     assert.deepEqual(queuedTexts(reopened.messages), ["second"]);
-    if (stopped) {
+    if (state === "paused") {
       const db = openNodeDatabase(path.join(root, "data", "node.db"), { readOnly: true });
       try { assert.equal(db.prepare("SELECT paused FROM queued_prompt_control WHERE queue_key = ?").get(`${fixture.projectId}:${opened.messages.find(message => message.type === "ready")!.sessionId}`)?.paused, 1); }
       finally { db.close(); }
@@ -56,10 +62,19 @@ for (const stopped of [false, true]) test(`a queued prompt survives a node crash
       socket.send(JSON.stringify({ type: "forceStartQueuedPrompt", queueId: queued.id, queueRevision: queued.revision }));
     }
 
-    await writeFile(`${process.env.JOINT_BOB_FAKE_GATE}.second`, "");
-    await waitForInvocations(["first", "second"]);
+    let expected = "second";
+    if (state === "uncertain") {
+      const [queued] = reopened.messages.find(message => message.type === "queuedPrompts")!.prompts as Array<{ id: string; revision: number; starting: boolean; uncertain: boolean }>;
+      assert.equal(queued.starting, false);
+      assert.equal(queued.uncertain, true, "the reconnect distinguishes an interrupted start from ordinary waiting");
+      expected = "inspect the previous start without replaying it";
+      socket.send(JSON.stringify({ type: "editQueuedPrompt", queueId: queued.id, queueRevision: queued.revision, message: expected }));
+      await waitFor(reopened.messages, () => reopened.messages.some(message => message.type === "queuedPromptEdited" && message.text === expected));
+    }
+    await writeFile(`${process.env.JOINT_BOB_FAKE_GATE}.${expected}`, "");
+    await waitForInvocations(["first", expected]);
     await waitFor(reopened.messages, () => reopened.messages.some((message) => message.type === "promptCompleted"));
-    assert.ok(reopened.messages.filter((message) => message.type === "textDelta").map((message) => message.text).join("").includes("second"));
+    assert.ok(reopened.messages.filter((message) => message.type === "textDelta").map((message) => message.text).join("").includes(expected));
   } finally {
     socket?.terminate();
     await killNode(node);

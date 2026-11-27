@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.345.11 — 2026-11-27
+
+- **Auto respond:** The timeout now includes setup and cleanup. Stop and new messages no longer wait for a stalled responder to finish.
+- **Queued messages:** After a restart interrupts a message's start, the conversation shows "Start uncertain" and warns before a retry. Reopening the conversation no longer reports the same queue error again.
+
 ## 2.345.10 — 2026-11-27
 
 - **Chat:** A queued message that an update restart caught while it was starting can now be edited or force started. Before, Edit and Force start were refused with "Queued prompt changed" or "Queued message changed", Delete was the only way out, and every message queued after it kept waiting while the chat repeated "Queued prompt start is uncertain; edit or cancel it before retrying".

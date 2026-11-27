@@ -464,29 +464,36 @@ test("scheduled auto-reply runs sharing a conversation do not replace each other
   }
 });
 
-test("responder timeout settles even when its prompt has not returned", async context => {
-  const runtime = await getHarnessRuntime("kiro");
-  let releasePrompt!: () => void;
-  const promptPending = new Promise<void>(resolve => { releasePrompt = resolve; });
-  let disposed = false;
-  context.mock.method(runtime, "open", async () => ({
-    settings: () => ({ provider: config.provider, modelId: config.modelId, reasoning: config.thinkingLevel }),
-    subscribe: () => () => {}, configure: async () => {}, preflight: async () => {},
-    prompt: async () => promptPending, cancel: async () => {}, isBusy: () => false,
-    dispose: () => { disposed = true; }, messages: [],
-  }) as unknown as HarnessSession);
-  context.mock.method(runtime, "validateSettings", async () => {});
-  const nativeSetTimeout = globalThis.setTimeout;
-  context.mock.method(globalThis, "setTimeout", ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => nativeSetTimeout(callback, ms === 20 * 60_000 ? 0 : ms, ...args)) as typeof setTimeout);
-  const outcome = runAutoResponder({ projectId: "timeout-project", conversationId: "timeout-conversation", cwd: process.cwd(), creatorAccountId: "creator", config, prompt: "Decide", signal: new AbortController().signal, onStep: () => {} }).then(() => "completed", error => (error as Error).message);
-  try {
-    assert.equal(await Promise.race([outcome, new Promise<string>(resolve => nativeSetTimeout(() => resolve("still waiting for prompt"), 100))]), "The auto responder timed out");
-    assert.equal(disposed, true);
-  } finally {
-    releasePrompt();
-    await outcome;
-  }
-});
+for (const stall of ["preflight", "prompt", "cancel"] as const) {
+  test(`responder deadline releases the caller during a stalled ${stall}`, async context => {
+    const runtime = await getHarnessRuntime("kiro");
+    const pending = Promise.withResolvers<void>();
+    const disposed = Promise.withResolvers<void>();
+    let prompts = 0;
+    let cancels = 0;
+    context.mock.method(runtime, "open", async () => ({
+      settings: () => ({ provider: config.provider, modelId: config.modelId, reasoning: config.thinkingLevel }),
+      subscribe: () => () => {}, configure: async () => {},
+      preflight: async () => { if (stall === "preflight") await pending.promise; },
+      prompt: async () => { prompts++; await pending.promise; },
+      cancel: async () => { cancels++; if (stall === "cancel") await pending.promise; },
+      isBusy: () => stall === "cancel" && prompts > 0,
+      dispose: () => disposed.resolve(), messages: [],
+    }) as unknown as HarnessSession);
+    context.mock.method(runtime, "validateSettings", async () => {});
+    const nativeSetTimeout = globalThis.setTimeout;
+    context.mock.method(globalThis, "setTimeout", ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => nativeSetTimeout(callback, ms === 20 * 60_000 ? 0 : ms, ...args)) as typeof setTimeout);
+    const outcome = runAutoResponder({ projectId: "timeout-project", conversationId: "timeout-conversation", cwd: process.cwd(), creatorAccountId: "creator", config, prompt: "Decide", signal: new AbortController().signal, onStep: () => {} }).then(() => "completed", error => (error as Error).message);
+    try {
+      assert.equal(await Promise.race([outcome, new Promise<string>(resolve => nativeSetTimeout(() => resolve(`still blocked on ${stall}`), 200))]), "The auto responder timed out");
+    } finally {
+      pending.resolve();
+    }
+    await disposed.promise;
+    assert.equal(prompts, stall === "preflight" ? 0 : 1, "expired preparation must never start a prompt");
+    if (stall === "cancel") assert.equal(cancels, 1, "cleanup must cancel a busy responder only once");
+  });
+}
 
 test("a responder cancelled before its turn starts never prompts its harness", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "auto-respond-cancel-"));
@@ -514,15 +521,13 @@ test("a responder cancelled before its turn starts never prompts its harness", a
   }
 });
 
-// Names what it is checking, then thinks until it is cancelled.
 const slowResponderSource = `export default async function responder(input) {
   input.onStep("Bash · npm test");
-  await new Promise((resolve) => input.signal.addEventListener("abort", resolve, { once: true }));
-  throw new Error("Auto respond was cancelled");
+  await new Promise(() => {});
 }
 `;
 
-test("every client sees the responder deciding and what it checks, a reconnect included, and Stop ends it", async () => {
+test("a stalled responder lets a human message through, and Stop clears it on all clients", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "auto-respond-deciding-"));
   let server: Awaited<ReturnType<typeof startDevNode>> | undefined;
   const sockets: WebSocket[] = [];
@@ -553,7 +558,12 @@ test("every client sees the responder deciding and what it checks, a reconnect i
     assert.equal(decision?.step, "Bash · npm test");
     assert.ok(Number.isFinite(Date.parse(decision.startedAt)), "the decision says when it started");
 
-    // Stop from the reconnected client cancels the decision and says so everywhere.
+    const resumedAt = reopened.messages.length;
+    reopened.socket.send(JSON.stringify({ type: "prompt", message: "manual follow-up" }));
+    await waitFor(reopened.messages, () => reopened.messages.slice(resumedAt).some(message => message.type === "textDelta" && String(message.text).includes("agent heard: manual follow-up")), 5_000);
+    await waitFor(reopened.messages, () => decisions(reopened.messages.slice(resumedAt)).some(decision => decision?.step === "Bash · npm test"));
+    assert.equal(reopened.messages.some(message => message.type === "userMessage" && message.auto), false);
+
     reopened.socket.send(JSON.stringify({ type: "abort" }));
     for (const client of [chat, reopened]) {
       await waitFor(client.messages, () => autoStates(client.messages).at(-1)?.stopKind === "user-stopped" && decisions(client.messages).at(-1) === null);

@@ -557,7 +557,8 @@ export function refreshHarnessPromptQueue(connection: HarnessChatConnection): vo
   // until onStarted transfers the queued bubble into history.
   const prompts = listQueuedPrompts(queueKey(connection)).filter((prompt) => !prompt.systemEventId);
   publish(connection, { type: "queuedPrompts", prompts: prompts.map((prompt) => {
-    return { id: prompt.id, text: prompt.displayText, displayText: prompt.displayText, timestamp: prompt.createdAt, ...(prompt.author ? { author: prompt.author } : {}), scheduled: isScheduledPromptText(prompt.promptText), starting: startingIds.has(prompt.id), revision: prompt.revision, editableText: prompt.messageText ?? prompt.displayText, settings: prompt.settings, attachments: attachmentList(prompt) };
+    const starting = startingIds.has(prompt.id);
+    return { id: prompt.id, text: prompt.displayText, displayText: prompt.displayText, timestamp: prompt.createdAt, ...(prompt.author ? { author: prompt.author } : {}), scheduled: isScheduledPromptText(prompt.promptText), starting, uncertain: !starting && prompt.dispatchState === "starting", revision: prompt.revision, editableText: prompt.messageText ?? prompt.displayText, settings: prompt.settings, attachments: attachmentList(prompt) };
   }) });
   publish(connection, { type: "queueUpdate", pending: prompts.length });
 }
@@ -621,11 +622,7 @@ async function enqueue(connection: HarnessChatConnection, message: string, image
   await writable(connection);
   // Automated delivery must not undo a person's Stop.
   if (!scheduledAutoRespond && !connection.automationProfile && !isScheduledPromptText(message)) await resumePromptQueue(connection);
-  // A later scheduled run waits for the current driver; only a person interrupts it.
-  if (!scheduledAutoRespond) {
-    autoDecisions.get(queueKey(connection))?.controller.abort("person-typed");
-    await resetAutoRespondCount(connection.project.id, connection.conversationId);
-  }
+  if (!scheduledAutoRespond) await resetAutoRespondCount(connection.project.id, connection.conversationId);
   if (settings) await (await getHarnessRuntime(selectedHarness(settings))).validateSettings(runtimeSettings(settings));
   const cwd = attachmentCwd(connection);
   const saved = await persistTaskAttachments(cwd, images, files);
@@ -637,6 +634,8 @@ async function enqueue(connection: HarnessChatConnection, message: string, image
   const displayText = [message.trim(), suffix].filter(Boolean).join("\n\n");
   const queued = enqueuePrompt(queueKey(connection), promptText, displayText, { bypassGuardian: connection.bypassGuardian, automationProfile: connection.automationProfile, scheduledAutoRespond, requestId, author: connection.author, messageText: message, promptSuffix: promptText.slice(message.trim().length).trim(), displaySuffix: suffix, attachmentPaths: absolute.map(({ path: file }) => file), images: imageAttachments.map(({ path: file, mimeType }) => ({ path: file, mimeType })), settings: settings === undefined ? null : settings });
   markHarnessInput(connection.shared);
+  // Wake the drain only after the new message exists, or it can restart the same check.
+  if (!scheduledAutoRespond) autoDecisions.get(queueKey(connection))?.controller.abort("person-typed");
   // A person's first message in a new conversation puts it under system control when their default in Bob's settings says so.
   if (connection.author && !connection.automationProfile && !scheduledAutoRespond && !connection.shared.session.messages.length) {
     const controlled = await applySystemControlDefault(connection.project.id, connection.conversationId, conversationModel(connection), connection.author);
@@ -1212,7 +1211,6 @@ async function drainLoop(connection: HarnessChatConnection): Promise<void> {
   let lastPrompt: QueuedPrompt | undefined;
   for (;;) {
     const responder = await getAutoRespond(connection.project.id, connection.conversationId);
-    if (responder?.status === "active" && responder.retry && Date.parse(responder.retry.nextAt) > Date.now()) { armAutoRetry(connection, responder); return; }
     await ensureCurrentSession(connection);
     if (pausedDrains.has(queueKey(connection)) || promptQueuePaused(queueKey(connection))) return;
     if (harnessTurnBusy(connection.shared)) { wakeWhenHarnessIdle(connection); return; }
@@ -1240,7 +1238,9 @@ async function drainLoop(connection: HarnessChatConnection): Promise<void> {
       claimQueuedPrompt(next.id);
       continue;
     }
-    if (next?.dispatchState === "starting" && !startingIds.has(next.id) && responder?.status === "active") {
+    if (next?.dispatchState === "starting" && !startingIds.has(next.id)) {
+      // Keep an uncertain manual message for the person to resolve; reconnects must not retry it.
+      if (responder?.status !== "active") return;
       await writable(connection);
       claimQueuedPrompt(next.id);
       recordTurnFailure(connection.engine, connection.shared.session.id, "A restart interrupted the previous prompt start. Inspect current state before continuing; do not replay actions with uncertain outcomes.");

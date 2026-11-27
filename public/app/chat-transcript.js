@@ -9,7 +9,7 @@ import { activityGroupSkills, activityStatsChanged, appendToActivityGroup, clear
 import { elements } from "./elements.js";
 import { brandIcon, menuIcon } from "./icons.js";
 import { openFileAction, projectFileUrl } from "./project-files.js";
-import { toast } from "./shell.js";
+import { confirmAction, toast } from "./shell.js";
 import { state } from "./state.js";
 import "./review-check-note.js";
 
@@ -880,8 +880,20 @@ function refreshQueuedControls() {
   elements.messages.querySelectorAll(".queued-batch-controls").forEach((toolbar) => toolbar.remove());
   const queued = queuedMessages();
   for (const [index, bubble] of queued.entries()) {
-    bubble.querySelector('[data-testid="queued-message-move-earlier-button"]').disabled = index === 0;
-    bubble.querySelector('[data-testid="queued-message-move-later-button"]').disabled = index === queued.length - 1;
+    const uncertain = bubble.hasAttribute("data-queue-uncertain");
+    const badge = bubble.querySelector(".queued-badge");
+    badge.textContent = uncertain ? "Start uncertain" : "Queued";
+    badge.title = uncertain ? "This message may have reached the agent before a restart." : "";
+    const force = bubble.querySelector('[data-testid="queued-message-force-start-button"]');
+    const spinner = force.querySelector(".queued-force-spinner");
+    force.textContent = uncertain ? "Retry start" : "Force start";
+    force.title = uncertain ? "Review the interrupted start before retrying" : "Stop the current turn and start this message now";
+    if (spinner) force.prepend(spinner);
+    const select = bubble.querySelector('[data-testid="queued-message-merge-checkbox"]');
+    select.disabled = uncertain;
+    if (uncertain) select.checked = false;
+    bubble.querySelector('[data-testid="queued-message-move-earlier-button"]').disabled = uncertain || index === 0 || queued[index - 1].hasAttribute("data-queue-uncertain");
+    bubble.querySelector('[data-testid="queued-message-move-later-button"]').disabled = uncertain || index === queued.length - 1 || queued[index + 1].hasAttribute("data-queue-uncertain");
   }
   if (queued.length < 2) return;
   const selected = queued.filter((bubble) => bubble.querySelector('[data-testid="queued-message-merge-checkbox"]').checked);
@@ -999,6 +1011,9 @@ function queuedEditor(bubble, queueId, footer, edit) {
     added = [];
     showAdded();
     settings.reset();
+    const uncertain = bubble.hasAttribute("data-queue-uncertain");
+    note.textContent = uncertain ? "The agent may already have received this message. Check what happened before sending it again." : "Sends after the current turn finishes.";
+    save.textContent = uncertain ? "Save and retry" : "Save";
     input.value = bubble.dataset.queuedEditableText ?? queuedEditableText(bubble._raw);
     footer.hidden = true;
     editor.hidden = false;
@@ -1054,9 +1069,11 @@ export function markMessageQueued(bubble, queueId, editableText = null, settings
   const edit = queuedButton("Edit", "queued-message-edit-button");
   const cancel = queuedButton("Delete", "queued-message-cancel-button");
   footer.append(badge, forceStart, selectLabel, earlier, later, edit, cancel);
-  forceStart.addEventListener("click", () => {
+  forceStart.addEventListener("click", async () => {
     if (forceStart.disabled) return;
-    if (!sendQueuedPromptAction({ type: "forceStartQueuedPrompt", queueId, queueRevision: Number(bubble.dataset.queueRevision) })) return;
+    const queueRevision = Number(bubble.dataset.queueRevision);
+    if (bubble.hasAttribute("data-queue-uncertain") && !await confirmAction({ title: "Retry this message?", message: "It may already have reached the agent before the restart. Check what happened before sending it again.", confirmLabel: "Retry start" })) return;
+    if (!sendQueuedPromptAction({ type: "forceStartQueuedPrompt", queueId, queueRevision })) return;
     // The force start cancels the running turn, which takes a moment. Hold the
     // button until this message starts (the bubble loses its queued mark) or
     // the server reports an error.

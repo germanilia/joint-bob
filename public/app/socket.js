@@ -588,6 +588,7 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
         bubble = markMessageQueued(appendMessage("user", prompt.text, sentAt, prompt.attachments, false, undefined, prompt.author), prompt.id, prompt.editableText, prompt.settings, prompt.revision);
       }
       bubble.toggleAttribute("data-queue-starting", prompt.starting === true);
+      bubble.toggleAttribute("data-queue-uncertain", prompt.uncertain === true);
     }
     syncQueuedMessageOrder(prompts.map((prompt) => prompt.id));
     syncLiveActivity();

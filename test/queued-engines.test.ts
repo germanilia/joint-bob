@@ -311,9 +311,10 @@ for (const action of ["editQueuedPrompt", "forceStartQueuedPrompt"] as const) {
       // The process stopped between beginQueuedPrompt and the claim, so no dispatch here owns the start.
       const queued = enqueuePrompt(key, "yes", "yes", { messageText: "yes", promptSuffix: "", displaySuffix: "", attachmentPaths: [] });
       assert.ok(beginQueuedPrompt(queued.id, queued.revision));
-      await assert.rejects(drainHarnessPromptQueue(connection), /start is uncertain/);
+      await drainHarnessPromptQueue(connection);
       assert.deepEqual(prompts, []);
       const interrupted = listQueuedPrompts(key)[0];
+      assert.equal(interrupted.dispatchState, "starting", "waits for an explicit retry instead of replaying the message");
       await handleHarnessChatMessage(connection, Buffer.from(JSON.stringify({ type: action, queueId: interrupted.id, queueRevision: interrupted.revision, message: "yes" })));
       await drainHarnessPromptQueue(connection);
       assert.deepEqual(prompts, ["yes"]);

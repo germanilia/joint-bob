@@ -86,6 +86,23 @@ test("an unacknowledged startup stays below its prompt across queue refreshes an
   assert.equal(await bubble.getByTestId("queued-message-error").innerText(), "The monthly usage limit has been reached");
 });
 
+test("an uncertain start warns before retry and keeps Delete available", async () => {
+  await renderQueued();
+  await deliver({ type: "queuedPrompts", prompts: [{ id: "q-1", text: "browse the dev site", editableText: "browse the dev site", revision: 4, starting: false, uncertain: true }] });
+  const bubble = page.locator('[data-queue-id="q-1"]');
+  assert.equal(await bubble.locator(".queued-badge").innerText(), "Start uncertain");
+  assert.equal(await bubble.getByTestId("queued-message-cancel-button").isEnabled(), true);
+  await bubble.getByRole("button", { name: "Retry start" }).click();
+  const confirmation = page.locator("#confirmDialog");
+  assert.match(await confirmation.innerText(), /may already have reached the agent/);
+  assert.deepEqual(await page.evaluate(() => window.queueCommands), []);
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await bubble.getByTestId("queued-message-edit-button").click();
+  assert.match(await bubble.locator(".queued-editor-note").innerText(), /may already have received/);
+  await bubble.getByRole("button", { name: "Save and retry" }).click();
+  assert.deepEqual(await page.evaluate(() => window.queueCommands), [{ type: "editQueuedPrompt", queueId: "q-1", message: "browse the dev site", queueSettings: null, queueRevision: 4, images: [], files: [] }]);
+});
+
 test("a later failure replaces the earlier reason instead of stacking", async () => {
   await renderQueued();
   await deliver({ type: "promptFailed", queueId: "q-1", error: "first reason" });
