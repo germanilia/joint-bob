@@ -41,6 +41,12 @@ function forward(values: unknown[]): void {
   }
 }
 
+/** SQLite's SQLITE_BUSY, in any of its extended forms. */
+export function databaseBusy(error: unknown): boolean {
+  const { code, errcode } = (error ?? {}) as { code?: unknown; errcode?: unknown };
+  return code === "ERR_SQLITE_ERROR" && typeof errcode === "number" && (errcode & 0xff) === 5;
+}
+
 let installed = false;
 
 /** Mirrors console.error to the backend ntfy channel and keeps every unhandled failure in the log with its stack. */
@@ -54,6 +60,11 @@ export function installBackendErrorCapture(): void {
   };
   process.on("unhandledRejection", (reason) => console.error("Unhandled promise rejection", reason));
   process.on("uncaughtException", (error) => {
+    // Another process held the database's write lock past the wait. The statement did not run
+    // and nothing is left half-written, so the node stays up: exiting restarted it into a
+    // start-up that made the next wait longer (three exits in fifteen minutes on the
+    // homeserver, 2026-11-27, from a relay heartbeat and an agent's progress note).
+    if (databaseBusy(error)) { console.error("Database write lock not obtained; the change was not saved", error); return; }
     writeError("Uncaught exception; the node is exiting", error);
     const [summary, ...detail] = `Uncaught exception; the node is exiting ${error.stack ?? error.message}`.split("\n");
     const exit = setTimeout(() => process.exit(1), 3_000);

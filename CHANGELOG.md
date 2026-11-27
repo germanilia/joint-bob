@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.346.9 — 2026-11-27
+
+- **Stability:** The server no longer exits when a database write cannot get the lock another process is holding. The change is not saved and the error is logged and reported, but the server keeps running. Before, each such exit restarted the server into a slow start-up, which made the next lock wait more likely.
+- **Stability:** A relay sharing heartbeat that cannot be saved is skipped until the next one instead of failing.
+
 ## 2.346.8 — 2026-11-27
 
 - **Pi:** Starting an Auto respond check no longer waits for unrelated provider catalogs once Pi finds the requested model. The selected account still has to pass the normal sign-in check.

@@ -320,8 +320,11 @@ class RelayConnection {
   private refreshWorkspaceLease(now = Date.now()): void {
     const current = this.membership;
     if (!this.connected || this.workspaceRevision < 0 || !current?.relayNodeId || now < this.nextWorkspaceHeartbeat) return;
-    recordRelaySharingHeartbeat(this.runtime.db, current.relayNodeId, true, now);
+    // Set first: a write that cannot get the database lock waits five seconds, and the next
+    // frame must not wait again. The lease outlasts a missed heartbeat.
     this.nextWorkspaceHeartbeat = now + 30_000;
+    try { recordRelaySharingHeartbeat(this.runtime.db, current.relayNodeId, true, now); }
+    catch (error) { console.warn("Relay sharing heartbeat not saved", error instanceof Error ? error.message : error); }
   }
 
   private teardown(reason: string): void {
