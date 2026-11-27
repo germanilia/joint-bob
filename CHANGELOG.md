@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.9 — 2026-11-27
+
+- **Schedules:** The scheduler's check every ten seconds no longer locks the node database for schedules that are not due. Before, while another process held that lock, each check stalled Joint Bob for up to five seconds and sent a "Scheduled dispatch failed: database is locked" error report, even when no schedule was due. Schedules that are due run as before.
+
 ## 2.345.8 — 2026-11-27
 
 - **Assistant Teams:** Deleting a team now closes its page. Before, the page stayed on the deleted team, kept checking it every few seconds (each check failing with an error) and still offered Delete team.
