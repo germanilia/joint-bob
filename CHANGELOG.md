@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.15 — 2026-11-27
+
+- **Subscription pools:** A Pi member whose provider account has run out of credit, such as z.ai's "429: Insufficient balance or no resource package", now hands the turn to the pool's next member instead of failing it. A Pi provider that rejects the member's sign-in (401 or 403) does the same. Before, the provider's status was lost on the way to the pool, so it treated these as ordinary errors and stopped.
+
 ## 2.346.14 — 2026-11-27
 
 - **Subscription profiles:** Deleting a profile that is still in a pool now says "Remove this profile from its pools before deleting it" and keeps the profile signed in. Before, the profile was signed out first and the delete then failed with a server error.
