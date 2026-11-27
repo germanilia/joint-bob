@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.10 — 2026-11-27
+
+- **Conversations:** Deleting a conversation that another machine runs no longer says "Conversation owner is unavailable; delete was not confirmed" when that machine is only busy, for example just after it restarted for an update. The delete had gone through anyway; this machine now waits up to two minutes for the other machine's answer instead of 30 seconds. A machine that is switched off or cannot be reached is still reported as before.
+
 ## 2.346.9 — 2026-11-27
 
 - **Stability:** The server no longer exits when a database write cannot get the lock another process is holding. The change is not saved and the error is logged and reported, but the server keeps running. Before, each such exit restarted the server into a slow start-up, which made the next lock wait more likely.

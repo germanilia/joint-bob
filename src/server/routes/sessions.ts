@@ -1050,10 +1050,12 @@ export async function deleteConversationAsActor(project: ProjectRecord, payload:
     if (!peer) throw new ConversationDeleteError(409, "Conversation owner is unavailable");
     let routed: globalThis.Response;
     try {
+      // A busy owner (just restarted, or under load) answers only after it has listed every conversation
+      // and removed the files, often well past 30 s; giving up earlier told the person a finished delete failed.
       routed = await runtimeFetch(`${peer.url}/api/cluster/sessions/delete`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload), signal: AbortSignal.timeout(30_000),
+        body: JSON.stringify(payload), signal: AbortSignal.timeout(120_000),
       });
     } catch { throw new ConversationDeleteError(409, "Conversation owner is unavailable; delete was not confirmed"); }
     if (routed.status === 204) return;
