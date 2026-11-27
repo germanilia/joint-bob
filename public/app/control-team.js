@@ -203,7 +203,7 @@ const deleteButton = (teamId, name) => {
     await api(`/api/team-hub/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
     await loadTeams(true);
     exitTeamContext();
-    toast.info(`Deleted ${name}`);
+    toast(`Deleted ${name}`);
   });
   btn.className = 'ghost compact danger';
   return btn;
@@ -515,7 +515,7 @@ async function renderMemoryWorkspace(url, agents) {
     top.append(makeNode('strong', '', `${ch.topic} ${ch.role ? `(/${ch.role})` : '(team)'} · ${action} v${ch.revision}`), makeNode('span', 'team-muted', `${ch.actor} · ${ch.created_at}`));
     const revBtn = button('Revert', `team-memory-revert-${ch.id}`, async () => {
       await api(`${url}/memory/changes/${ch.id}/revert`, { method: 'POST', body: { expectedRevision: ch.revision } });
-      toast.info(`Reverted ${ch.topic}`);
+      toast(`Reverted ${ch.topic}`);
       await renderMemoryWorkspace(url, agents);
     });
     revBtn.className = 'ghost compact';
@@ -574,7 +574,7 @@ async function openMemoryEditor(pane, url, topicItem, roles) {
     });
     memoryDirty = false;
     selectedMemoryKey = `${scope}:${role || ''}:${slug}`;
-    toast.info(`Saved memory topic "${slug}"`);
+    toast(`Saved memory topic "${slug}"`);
     await renderMemoryWorkspace(url, latestAgents);
   });
   saveBtn.className = 'primary compact';
@@ -589,7 +589,7 @@ async function openMemoryEditor(pane, url, topicItem, roles) {
       });
       memoryDirty = false;
       selectedMemoryKey = null;
-      toast.info(`Deleted "${topicItem.name}"`);
+      toast(`Deleted "${topicItem.name}"`);
       await renderMemoryWorkspace(url, latestAgents);
     });
     delBtn.className = 'ghost compact danger';
@@ -672,7 +672,7 @@ async function renderSettingsWorkspace(url, readiness) {
     window.dispatchEvent(new CustomEvent('team-context-changed'));
     saved.dataset.testid = 'team-saved';
     saved.textContent = 'Saved';
-    toast.info('Team settings saved');
+    toast('Team settings saved');
     await loadTeams(true);
   });
   saveBtn.className = 'primary compact';

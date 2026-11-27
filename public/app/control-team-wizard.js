@@ -297,7 +297,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
           const actions = makeNode('div', 'team-row-actions');
           const approve = makeButton('Approve & Create Roles →', `wizard-approve-${proposal.id}`, async () => {
             await api(`/api/team-hub/${encodeURIComponent(teamId)}/proposals/${encodeURIComponent(proposal.id)}/decide`, { method: 'POST', body: { decision: 'approve' } });
-            toast.info('Blueprint approved and applied live');
+            toast('Blueprint approved and applied live');
             await refreshDesign();
           });
           approve.className = 'primary compact';
@@ -406,7 +406,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
           settings: { ...latest.settings, voiceProvider: providerSelect.value, kokoroVoice: kokoroSelect.value },
         },
       });
-      toast.info(`Voice briefs set to ${providerSelect.value === 'kokoro' ? 'Joint Bob Local Voice (Kokoro)' : 'ElevenLabs'}`);
+      toast(`Voice briefs set to ${providerSelect.value === 'kokoro' ? 'Joint Bob Local Voice (Kokoro)' : 'ElevenLabs'}`);
     });
     saveVoice.className = 'ghost compact';
     const voiceBar = makeNode('div', 'team-inline-bar');
