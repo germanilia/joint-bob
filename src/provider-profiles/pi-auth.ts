@@ -1,5 +1,8 @@
 import { ModelRuntime } from "../pi-sdk.js";
 
+const DISCOVER_TIMEOUT_MS = 5_000;
+const FAILED_DISCOVER_BACKOFF_MS = 60_000;
+
 type IsolationCheck = () => boolean | Promise<boolean>;
 
 /** Authenticate selected profiles outside models.json composition. Wrapping a native
@@ -9,7 +12,7 @@ export async function protectPiProfileRuntime(runtime: ModelRuntime, isolated: I
   const authority = await ModelRuntime.create({ ...storage, modelsPath: null, refreshOnCreate: false });
   const registrations = new Map<string, unknown>();
   const guarded = new WeakSet<object>();
-  const discovered = new WeakMap<object, { key: string | undefined; pending: Promise<boolean> }>();
+  const discovered = new WeakMap<object, { key: string | undefined; pending: Promise<boolean>; retryAfter?: number }>();
   async function syncProviders() {
     let changed = false;
     const registered = new Set(runtime.getRegisteredProviderIds());
@@ -71,13 +74,32 @@ export async function protectPiProfileRuntime(runtime: ModelRuntime, isolated: I
       if (!auth) { unavailable.add(id); return; }
       const key = auth.auth.apiKey;
       let refresh = discovered.get(native);
-      if (!refresh || refresh.key !== key) {
-        const pending = authority.refresh({ providers: [id], allowNetwork: true }).then(({ aborted, errors }) => !aborted && !errors.has(id));
+      if (!refresh || refresh.key !== key || (refresh.retryAfter !== undefined && Date.now() >= refresh.retryAfter)) {
+        const pending = (async () => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const result = await Promise.race([
+              authority.refresh({ providers: [id], allowNetwork: true, signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS) })
+                .catch(() => ({ aborted: true, errors: new Map<string, Error>() })),
+              new Promise<{ aborted: true; errors: Map<string, Error> }>((resolve) => {
+                timer = setTimeout(() => resolve({ aborted: true, errors: new Map() }), DISCOVER_TIMEOUT_MS + 250);
+                timer.unref?.();
+              }),
+            ]);
+            return !result.aborted && !result.errors.has(id);
+          } catch {
+            return false;
+          } finally {
+            clearTimeout(timer);
+          }
+        })();
         refresh = { key, pending };
         discovered.set(native, refresh);
       }
       if (!await refresh.pending) {
-        if (discovered.get(native) === refresh) discovered.delete(native);
+        if (discovered.get(native) === refresh && refresh.retryAfter === undefined) {
+          refresh.retryAfter = Date.now() + FAILED_DISCOVER_BACKOFF_MS;
+        }
         console.warn(`Pi could not discover models for ${id}`);
         unavailable.add(id);
       }
