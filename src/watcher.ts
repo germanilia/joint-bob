@@ -1,8 +1,9 @@
-import { statSync, watch, type FSWatcher } from "node:fs";
+import { statSync } from "node:fs";
 import path from "node:path";
 import { multiUserEnabled, runInRuntime, serviceRuntime, type RuntimeAccount } from "./account-runtime.js";
 import { listDiscoveredHarnesses } from "./harnesses/registry.js";
 import { sessionCwdSet, type SessionProjectPaths } from "./harnesses/shared-paths.js";
+import { watchTree, type TreeWatch } from "./tree-watch.js";
 import type { ProjectRecord } from "./types.js";
 
 const DEBOUNCE_MS = 750;
@@ -25,7 +26,7 @@ const MAX_ANNOUNCED_FILES = 20_000;
 export type SessionChangeListener = (projectId: string, changedFiles: string[]) => void;
 export interface SessionWatcherOptions { knownRefreshMs?: number; announcesItsEnd?: (file: string) => boolean }
 interface WatchedProject { paths: SessionProjectPaths; directories: Set<string>; pendingFiles: Map<string, ReturnType<typeof listDiscoveredHarnesses>[number]>; needsFullRefresh: boolean; debounceTimer: NodeJS.Timeout | null; runtime: RuntimeAccount; lastFlushAt: number; }
-interface SharedWatch { watcher: FSWatcher; projects: Set<string>; openedAt: number; }
+interface SharedWatch { watcher: TreeWatch; projects: Set<string>; openedAt: number; }
 
 export function sessionWatchDirs(project: SessionProjectPaths): string[] {
   return [...new Set(listDiscoveredHarnesses().flatMap((adapter) => adapter.sync.watchDirs?.(project) ?? [adapter.sync.transcriptRoot()]))];
@@ -111,7 +112,7 @@ export class SessionWatcher {
   }
   private openDirectory(dir: string): SharedWatch {
     const projects = new Set<string>();
-    const watcher = watch(dir, { recursive: true }, (_event, file) => {
+    const watcher = watchTree(dir, (_event, file) => {
       for (const projectId of projects) {
         void this.handleEvent(projectId, dir, file).catch((error) => console.error(`Session watcher event failed for ${dir}:`, error));
       }

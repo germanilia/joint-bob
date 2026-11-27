@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.346.2 — 2026-11-27
+
+- **Performance (Linux):** A new file in a conversation transcript folder no longer makes the server read that folder's whole listing again. On a machine with thousands of transcripts in one folder this took over a tenth of the server's processor while agents were running; creating 300 files in a folder of 6,600 went from 2.5 seconds of processor time to 11 milliseconds.
+- **Performance:** Conversation lists no longer work out every conversation's transcript location on each listing just to confirm it is inside the server's own account.
+
 ## 2.346.1 — 2026-11-27
 
 - **Assistant Teams Live Browser Login:** Fixed the browser  command payload (uid=1000(ilia) gid=1000(ilia) groups=1000(ilia),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),101(lxd),988(docker) instead of ) so the release build compiles cleanly and opens inline browser logins in interactive control mode.

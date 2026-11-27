@@ -70,6 +70,10 @@ function inProjectRuntime(adapter: HarnessAdapter): HarnessAdapter {
   // A transcript the server reads for a person must really be in their home (see confinedToRuntime).
   const confinedFile = (file: string) => confinedToRuntime(currentRuntime(), file);
   const confinedSession = (sessionPath: string) => {
+    // The service's own account is confined to nothing, so there is no file to work out. Every
+    // listing and refresh asks this for every conversation and segment (a tenth of the
+    // homeserver's processor on 2026-11-27, all of it resolving paths to answer yes).
+    if (!currentRuntime().name) return true;
     let file: string | undefined;
     try { file = adapter.paths.transcriptFile?.(sessionPath); } catch { return true; }
     return !file || confinedFile(file);

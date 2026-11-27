@@ -52,6 +52,13 @@ function waitForCallback(callbacks: Map<string, string[]>, projectId: string, ex
   });
 }
 
+/** A watch that covers a folder and everything under it: the system's recursive one, or on Linux
+    the watch of a folder itself, which tree-watch.ts opens with a listener and no options. */
+function opensTree(args: Parameters<typeof fs.watch>): boolean {
+  if (typeof args[1] === "object" && args[1] !== null && "recursive" in args[1] && args[1].recursive) return true;
+  return process.platform === "linux" && typeof args[1] === "function";
+}
+
 test("projects share one recursive watcher and removing a subscriber keeps it alive", async (t) => {
   const home = await mkdtemp(path.join(os.tmpdir(), "session-watcher-shared-"));
   const previousHome = process.env.HOME;
@@ -61,7 +68,7 @@ test("projects share one recursive watcher and removing a subscriber keeps it al
   const originalWatch = fs.watch;
   const watchMock = t.mock.method(fs, "watch", (...args: Parameters<typeof fs.watch>) => {
     const handle = originalWatch(...args);
-    if (typeof args[1] === "object" && args[1] !== null && "recursive" in args[1] && args[1].recursive) {
+    if (opensTree(args)) {
       opened.push(String(args[0]));
       if (String(args[0]) === root) handles.push(handle);
     }
@@ -110,8 +117,7 @@ test("a watcher that keeps failing is reopened less and less often", async (t) =
   const originalWatch = fs.watch;
   const watchMock = t.mock.method(fs, "watch", (...args: Parameters<typeof fs.watch>) => {
     const handle = originalWatch(...args);
-    // Linux emulates a recursive watch with plain watches of its own, the root's included.
-    if (String(args[0]) === root && typeof args[1] === "object" && args[1] !== null && "recursive" in args[1] && args[1].recursive) handles.push(handle);
+    if (String(args[0]) === root && opensTree(args)) handles.push(handle);
     return handle;
   });
   syncBuiltinESMExports();
