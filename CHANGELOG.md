@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.346.11 — 2026-11-27
+
+- **Assistant Teams:** Clicking **+ New team with Chief…** now opens the setup wizard immediately instead of stalling 10–14s on unreachable cluster peers, shows inline loading/retry feedback if cluster data is still loading, and coalesces concurrent `/api/team-hub` requests.
 ## 2.346.10 — 2026-11-27
 
 - **Conversations:** Deleting a conversation that another machine runs no longer says "Conversation owner is unavailable; delete was not confirmed" when that machine is only busy, for example just after it restarted for an update. The delete had gone through anyway; this machine now waits up to two minutes for the other machine's answer instead of 30 seconds. A machine that is switched off or cannot be reached is still reported as before.
