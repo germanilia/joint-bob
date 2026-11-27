@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.5 — 2026-11-27
+
+- **Performance:** A machine catching up on a cluster's changes no longer makes the machine it asks read and sort that cluster's whole change log for every page of 100 changes. On a machine holding a large log this took about a fifth of its processor and slowed everything else, including opening conversations.
+
 ## 2.345.4 — 2026-11-27
 
 - **Assistant Teams:** A team member's Connect services window opens its Secrets & API tab again. Whenever the host had a secret that could be attached, the tab failed with "undefined is not an object (evaluating 'secret.variableNames.join')" and sent an error report. It now lists each secret's variable names.

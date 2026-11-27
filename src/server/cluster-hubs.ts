@@ -40,10 +40,15 @@ export const relayRequestSchema = z.object({
 }).strict();
 export const relayPullSchema = z.object({ clusterId: z.string().uuid(), after: z.number().int().nonnegative() }).strict();
 
+/* A member pulls a cluster's log a page at a time, in order. With only the unique index on
+   (cluster_id, event_id) each page read every row of the cluster and sorted them: 158,000 rows
+   per page on the homeserver, a fifth of its processor on 2026-11-27. cluster_v2_relay_log_page
+   lets a page start where the last one ended. */
 export function ensureHubSchema(db: DatabaseSync): void {
   ensureReplicationSchema(db);
   ensureResourceSharingSchema(db);
   db.exec(`CREATE TABLE IF NOT EXISTS cluster_v2_relay_log(seq INTEGER PRIMARY KEY AUTOINCREMENT, cluster_id TEXT NOT NULL, event_id TEXT NOT NULL, event TEXT NOT NULL, signature TEXT NOT NULL, from_node_id TEXT NOT NULL, UNIQUE(cluster_id,event_id));
+CREATE INDEX IF NOT EXISTS cluster_v2_relay_log_page ON cluster_v2_relay_log(cluster_id, seq);
 CREATE TABLE IF NOT EXISTS cluster_v2_hub_queue(event_id TEXT NOT NULL, cluster_id TEXT NOT NULL, slot TEXT NOT NULL CHECK(slot IN ('low','high')), node_id TEXT, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT NOT NULL, delivered_at TEXT, last_error TEXT, PRIMARY KEY(event_id,cluster_id,slot));
 CREATE INDEX IF NOT EXISTS cluster_v2_hub_queue_due ON cluster_v2_hub_queue(next_attempt_at) WHERE delivered_at IS NULL;
 CREATE TABLE IF NOT EXISTS cluster_v2_hub_cursor(singleton INTEGER PRIMARY KEY CHECK(singleton=1), outbox_rowid INTEGER NOT NULL);

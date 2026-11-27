@@ -46,3 +46,11 @@ test("replicated usage history stays bounded", () => {
   assert.ok(EVENT_HISTORY_DAYS["model.usage"] <= 14);
   assert.ok(EVENT_HISTORY_DAYS["user.recent"] <= 7);
 });
+
+test("a page of a cluster's relay log starts where the last one ended instead of sorting the whole cluster", () => {
+  const db = new DatabaseSync(":memory:");
+  ensureHubSchema(db);
+  const detail = plan(db, "SELECT seq,event,signature FROM cluster_v2_relay_log WHERE cluster_id=? AND seq>0 ORDER BY seq LIMIT 100", "cluster");
+  assert.match(detail, /cluster_v2_relay_log_page \(cluster_id=\? AND seq>\?\)/);
+  assert.doesNotMatch(detail, /TEMP B-TREE/);
+});
