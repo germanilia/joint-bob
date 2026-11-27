@@ -6,13 +6,15 @@ import { WebSocketServer } from "ws";
 import { getClusterNode } from "../src/cluster.js";
 import { ensureConversationRecord } from "../src/conversation-records.js";
 import { cronStore } from "../src/cron.js";
-import { executeCronRun, queuedCronPrompt } from "../src/server/cron.js";
+import { dispatchCronTasks, executeCronRun, queuedCronPrompt } from "../src/server/cron.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { addProject, removeProject } from "../src/store.js";
 import { listTurnFailures, withTurnFailures } from "../src/turn-failures.js";
-import { server } from "../src/server/state.js";
+import { flags, server } from "../src/server/state.js";
+import { DatabaseSync } from "node:sqlite";
+import { resolveDataDirectory } from "../src/data-directory.js";
 import { sessionTitleOverrides, setSessionTitle } from "../src/names.js";
 import { webhookConversationTitle } from "../src/webhook-title.js";
 import { cronInputSchema } from "../src/cron.js";
@@ -41,6 +43,27 @@ test("scheduled startup errors appear inside an otherwise empty conversation", a
     await new Promise<void>(resolve => endpoint.close(() => resolve()));
     await removeProject(project.id);
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a scheduler tick with nothing due never waits on a database another writer holds", async () => {
+  const node = await getClusterNode();
+  const task = cronStore().create({ projectId: "project", name: "Not due", prompt: "Check", engine: "pi", sessionId: null, ownerNodeId: node.id, enabled: true, schedule: { frequency: "hourly", hour: 0, minute: 0, weekday: 0, timezone: "UTC" } });
+  const now = task.nextRun - 1;
+  const writer = new DatabaseSync(path.join(resolveDataDirectory(), "node.db"));
+  const previousReady = flags.startupReady;
+  flags.startupReady = true;
+  writer.exec("BEGIN IMMEDIATE");
+  try {
+    const started = Date.now();
+    await dispatchCronTasks(now);
+    assert.ok(Date.now() - started < 1000, "a tick with nothing due must not wait for the write lock");
+    assert.deepEqual(cronStore().history(task.id), []);
+  } finally {
+    writer.exec("ROLLBACK");
+    writer.close();
+    flags.startupReady = previousReady;
+    cronStore().delete(task.id);
   }
 });
 

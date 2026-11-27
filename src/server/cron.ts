@@ -156,6 +156,8 @@ export async function dispatchCronTasks(now = Date.now()): Promise<void> {
   if (!flags.startupReady || flags.updatePreparing) return;
   const local = await getClusterNode();
   for (const task of cronStore().list()) {
+    // claim() takes the write lock; skip tasks that are not due so a busy database is only waited on when a run is due.
+    if (task.ownerNodeId !== local.id || !task.enabled || task.nextRun > now) continue;
     const project = await getProject(task.projectId);
     const tagDatabase = await clusterV2Database();
     const workspace = automationWorkspaceIdentity(tagDatabase, local.id, project?.type ?? "personal");
