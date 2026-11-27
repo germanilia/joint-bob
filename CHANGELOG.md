@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.2 — 2026-11-27
+
+- **Background tasks:** A turn no longer fails with "Pi credential refresh failed … cannot rollback - no transaction is active" when the task supervisor happens to be writing as an agent's background-task access is renewed. Joint Bob now waits briefly for that write to finish, as it already does everywhere else it opens the task database. A lock that lasts too long is reported as "database is locked" instead of the rollback error.
+
 ## 2.345.1 — 2026-11-27
 
 - **Conversation feedback:** A conversation marked Done no longer shows "learning failed" when the feedback model proposes a lesson longer than the 320-character limit. Each proposed lesson is now checked on its own: one that breaks a limit is skipped and never learned, and the other lessons are still reviewed.
