@@ -30,6 +30,19 @@ function assistantFailure(messages: unknown[]): string | undefined {
   return `Pi turn ${value.stopReason}`;
 }
 
+/** Pi writes a provider's HTTP error as "<status>: <body>" or "<provider> (<status>): <body>" (pi-ai formatProviderError). */
+const PROVIDER_ERROR_STATUS = /^(?:(\d{3})|[^():\n]+ \((\d{3})\)): /;
+
+/**
+ * A failed turn as an error that keeps the provider's HTTP status, so a subscription pool can tell an exhausted account (429)
+ * or a rejected sign-in (401/403) and hand the turn to its next member.
+ * fix: a z.ai member's "429: Insufficient balance" ended the turn instead of moving on (ilia-mac-2, 2026-11-27).
+ */
+function turnFailure(message: string): Error {
+  const match = PROVIDER_ERROR_STATUS.exec(message);
+  return match ? Object.assign(new Error(message), { status: Number(match[1] ?? match[2]) }) : new Error(message);
+}
+
 export class PiSession implements HarnessSession {
   private handle: PiHandle;
   private readonly listeners = new Set<Listener>();
@@ -143,7 +156,7 @@ export class PiSession implements HarnessSession {
         const messages = this.handle.session.messages;
         if (messages.at(-1) !== previousLastMessage) {
           const failure = assistantFailure(messages);
-          if (failure) throw new Error(failure);
+          if (failure) throw turnFailure(failure);
         }
         if (!started) {
           started = true;
