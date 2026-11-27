@@ -23,7 +23,7 @@ const clip = (s, n) => (!s ? '' : s.length > n ? `${s.slice(0, n - 1)}…` : s);
  * One team's Chief Chat & Activity: send work to Chief or a member, review pending proposals,
  * inspect live/past delegation chains and drill into any assignment's execution trace.
  */
-export function createTeamWork(teamId, members, { isCurrent, fail, isLocal = true, openConversation, onRequestsUpdated, onProposalDecided }) {
+export function createTeamWork(teamId, members, { isCurrent, fail, noticeIfGone, isLocal = true, openConversation, onRequestsUpdated, onProposalDecided }) {
   const node = makeNode('section', 'team-work');
   node.dataset.testid = 'team-work';
   const form = makeNode('div', 'team-work-form');
@@ -105,11 +105,20 @@ export function createTeamWork(teamId, members, { isCurrent, fail, isLocal = tru
 
   const refresh = async () => {
     if (!isCurrent()) { stop(); return; }
-    const [{ requests }, proposalsRes, automationsRes] = await Promise.all([
-      api(`/api/team-hub/${encodeURIComponent(teamId)}/requests`),
-      api(`/api/team-hub/${encodeURIComponent(teamId)}/proposals`).catch(() => ({ proposals: [] })),
-      isLocal ? api(`/api/assistant-teams/${encodeURIComponent(teamId)}/automations`).catch(() => ({ automations: [], requests: [] })) : Promise.resolve({ automations: [], requests: [] }),
-    ]);
+    // A 404 may mean the team is gone, which is said once in place rather than toasted on every poll.
+    const quiet = { quietStatuses: [404] };
+    let loaded;
+    try {
+      loaded = await Promise.all([
+        api(`/api/team-hub/${encodeURIComponent(teamId)}/requests`, quiet),
+        api(`/api/team-hub/${encodeURIComponent(teamId)}/proposals`, quiet).catch(() => ({ proposals: [] })),
+        isLocal ? api(`/api/assistant-teams/${encodeURIComponent(teamId)}/automations`, quiet).catch(() => ({ automations: [], requests: [] })) : Promise.resolve({ automations: [], requests: [] }),
+      ]);
+    } catch (error) {
+      if (error.status === 404 && (!isCurrent() || await noticeIfGone())) return;
+      throw error;
+    }
+    const [{ requests }, proposalsRes, automationsRes] = loaded;
     if (!isCurrent()) return;
     lastRequests = requests ?? [];
     onRequestsUpdated?.(lastRequests);

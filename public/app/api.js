@@ -34,7 +34,8 @@ function requestFailure(error, path, options, status) {
   });
   // Most callers catch and toast only the message, so record diagnostics here.
   // Never log request headers, bodies or query values.
-  if (!cancelled) {
+  // `quietStatuses` are outcomes the caller handles itself: no toast and no error report.
+  if (!cancelled && !options.quietStatuses?.includes(status)) {
     recordFailure({ method, path: requestPath, status, name: cause.name, message: cause.message, reason, details: cause.details, cancelled, uncertainWrite });
     console.warn("API request failed", { method, path: requestPath, status, name: cause.name, message: reason });
     window.dispatchEvent(new CustomEvent("joint-bob-client-error", { detail: { kind: "toast", message } }));

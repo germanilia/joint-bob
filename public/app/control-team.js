@@ -75,6 +75,10 @@ for (const [id, label] of TAB_DEFS) {
   workspaceBar.append(btn);
 }
 document.querySelector('#controlViews').prepend(workspaceBar);
+const gone = tagged(makeNode('p', 'team-error-inline team-gone', 'This team no longer exists. Updates have stopped.'), 'team-gone');
+gone.setAttribute('role', 'status');
+gone.hidden = true;
+workspaceBar.after(gone);
 
 const button = (text, id, fn) => makeButton(text, id, () => Promise.resolve().then(fn).catch(fail));
 const backToAssistants = button('← Back to Personal Bob', 'team-back-to-assistants', () => exitTeamContext());
@@ -707,6 +711,28 @@ async function renderSettingsWorkspace(url, readiness) {
   settingsMirror.replaceChildren(makeNode('h2', '', 'Shared team settings · open the Channels & Settings tab inside your Team Workspace.'));
 }
 
+// A 404 alone does not prove a team is gone: a host that is briefly away can answer the same.
+async function teamIsGone(teamId, remoteClusterId) {
+  const quiet = { quietStatuses: [0, 404] };
+  if (!remoteClusterId) return api(`/api/assistant-teams/${encodeURIComponent(teamId)}`, quiet).then(() => false, e => e.status === 404);
+  const { teams, unreachable } = await api('/api/team-hub?fresh=1', quiet);
+  return !teams.some(item => item.id === teamId) && !unreachable.includes(remoteClusterId);
+}
+
+/**
+ * When the open team is confirmed gone, says so in place and stops everything that asks for it. The view stays as it is:
+ * only the person leaves it. Resolves true when the caller's failure needs no further report.
+ */
+async function noticeIfGone(teamId, remoteClusterId) {
+  const mine = generation;
+  if (!await teamIsGone(teamId, remoteClusterId)) return false;
+  if (mine !== generation) return true;
+  ++generation; stream?.close(); stream = undefined; work?.stop();
+  error.textContent = '';
+  gone.hidden = false;
+  return true;
+}
+
 async function refresh(force = false) {
   const mine = generation;
   if (!force && (memoryDirty || editingSettings || document.querySelector('.team-modal-dialog[open]'))) return;
@@ -717,8 +743,14 @@ async function refresh(force = false) {
     settingsWorkspacePanel.replaceChildren();
     return;
   }
-  const url = base();
-  const [record, agents, readiness] = await Promise.all([api(url), api(`${url}/agents`), api(`${url}/readiness`)]);
+  const teamId = select.value, url = base(), quiet = { quietStatuses: [404] };
+  let loaded;
+  try { loaded = await Promise.all([api(url, quiet), api(`${url}/agents`, quiet), api(`${url}/readiness`, quiet)]); }
+  catch (e) {
+    if (e.status === 404 && (mine !== generation || await noticeIfGone(teamId))) return;
+    throw e;
+  }
+  const [record, agents, readiness] = loaded;
   if (mine !== generation || refreshRequest !== refreshGeneration) return;
   team = record.team;
   latestAgents = agents;
@@ -742,7 +774,7 @@ async function refresh(force = false) {
 
 select.addEventListener('change', () => {
   ++generation; stream?.close(); stream = undefined; team = undefined; latestAgents = null; latestRequests = [];
-  editingSettings = false; memoryDirty = false; error.textContent = '';
+  editingSettings = false; memoryDirty = false; error.textContent = ''; gone.hidden = true;
   work?.stop(); work = undefined;
   syncMobile();
   const inTeam = Boolean(select.value);
@@ -769,16 +801,17 @@ select.addEventListener('change', () => {
     for (const member of remote.members) ul.append(makeNode('li', '', `/${member.role}${member.coordinator ? ' (Chief)' : ''}${member.name ? ` — ${member.name}` : ''}${member.ready ? '' : ' · not ready'}`));
     intro.append(ul, deleteButton(remote.id, remote.name || remote.clusterName));
     panels.assistants.append(intro);
-    work = createTeamWork(remote.id, remote.members, { isCurrent: () => mine === generation, fail, isLocal: false, openConversation });
+    work = createTeamWork(remote.id, remote.members, { isCurrent: () => mine === generation, fail, noticeIfGone: () => noticeIfGone(remote.id, remote.clusterId), isLocal: false, openConversation });
     panels.live.append(work.node);
     switchTeamTab('live');
     return;
   }
 
-  const here = generation;
-  work = createTeamWork(select.value, hubTeams.get(select.value)?.members ?? [], {
+  const here = generation, teamId = select.value;
+  work = createTeamWork(teamId, hubTeams.get(select.value)?.members ?? [], {
     isCurrent: () => here === generation,
     fail,
+    noticeIfGone: () => noticeIfGone(teamId),
     isLocal: true,
     openConversation,
     onRequestsUpdated: reqs => {
@@ -805,6 +838,8 @@ select.addEventListener('change', () => {
     ++generation; team = undefined; stream = undefined;
     error.textContent = 'Team updates disconnected. Reselect the team to reconnect.';
     connection.close();
+    // Deleting a team ends its stream too. A server that does not answer leaves the message above.
+    noticeIfGone(teamId).catch(fail);
   };
   refresh(true).catch(fail);
 });
