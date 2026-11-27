@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.4 — 2026-11-27
+
+- **Assistant Teams:** When the team open in the control center no longer exists, for example because it was deleted in another tab or on another machine, the page now says so once, inline, and stops asking for it. You stay on the same screen. Before, it kept asking every four seconds, showing an error and sending an error report each time. For a team on another machine, it is called gone only once that machine's cluster can be reached, because a host that is away can also answer "not found".
+
 ## 2.346.3 — 2026-11-27
 
 - **Connection:** When an update restart briefly takes Joint Bob offline and the page reaches it through the relay or a reverse proxy, a read that the proxy answers with 502 or 503 is now retried and then folded into the single connection notice, as a read that gets no answer already was. Before, each one showed an error such as "Could not complete GET /api/harnesses: HTTP 502" and sent an error report. Errors that Joint Bob itself returns, and writes, are unchanged.
