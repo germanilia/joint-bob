@@ -1048,11 +1048,14 @@ export async function deleteConversationAsActor(project: ProjectRecord, payload:
   if (ownership && ownership.ownerNodeId !== local.id) {
     const peer = await getRuntimePeer(ownership.ownerNodeId);
     if (!peer) throw new ConversationDeleteError(409, "Conversation owner is unavailable");
-    const routed = await runtimeFetch(`${peer.url}/api/cluster/sessions/delete`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload), signal: AbortSignal.timeout(30_000),
-    });
+    let routed: globalThis.Response;
+    try {
+      routed = await runtimeFetch(`${peer.url}/api/cluster/sessions/delete`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload), signal: AbortSignal.timeout(30_000),
+      });
+    } catch { throw new ConversationDeleteError(409, "Conversation owner is unavailable; delete was not confirmed"); }
     if (routed.status === 204) return;
     const body = await routed.json().catch(() => null) as { error?: unknown } | null;
     throw new ConversationDeleteError(routed.status, typeof body?.error === "string" ? body.error : "Conversation owner delete failed");
