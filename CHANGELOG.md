@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.1 — 2026-11-27
+
+- **Conversation feedback:** A conversation marked Done no longer shows "learning failed" when the feedback model proposes a lesson longer than the 320-character limit. Each proposed lesson is now checked on its own: one that breaks a limit is skipped and never learned, and the other lessons are still reviewed.
+
 ## 2.345.0 — 2026-11-27
 
 - **Assistant Teams:** Replaced the cluster cards in the New Team Setup wizard with a searchable cluster dropdown that lists all joined clusters, clearly marks clusters that already have a team or are unreachable, and offers a one-click shortcut to continue setting up an existing local team.
