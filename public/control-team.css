@@ -5,6 +5,7 @@
 .team-settings-area { border-top: 1px solid var(--line); margin-top: 16px; }
 .team-muted { color: var(--muted); font-size: 13px; margin: 2px 0; }
 .team-error-inline { color: var(--danger); font-size: 13px; margin: 6px 0; }
+.team-gone { padding: 0 22px; }
 .team-status-inline { color: var(--accent); font-size: 13px; margin: 6px 0; }
 .team-section-eyebrow { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; margin: 12px 0 6px; }
 .team-section-title { margin: 16px 0 8px; font-size: 15px; font-weight: 650; }
