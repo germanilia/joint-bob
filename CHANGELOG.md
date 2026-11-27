@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.5 — 2026-11-27
+
+- **Conversations:** Reopening a conversation that was just deleted, on this machine or another, now shows "Conversation not found", and the list drops it. Before, while its transcript file was still on disk, the page showed "Conversation record was deleted" and sent an error report on every reconnect.
+
 ## 2.346.4 — 2026-11-27
 
 - **Assistant Teams:** When the team open in the control center no longer exists, for example because it was deleted in another tab or on another machine, the page now says so once, inline, and stops asking for it. You stay on the same screen. Before, it kept asking every four seconds, showing an error and sending an error report each time. For a team on another machine, it is called gone only once that machine's cluster can be reached, because a host that is away can also answer "not found".
