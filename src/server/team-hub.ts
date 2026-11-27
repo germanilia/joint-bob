@@ -25,7 +25,8 @@ const TARGET = (operation: Operation): string => `/api/cluster/v2/assistant-team
 const PEER_TIMEOUT_MS = 8_000;
 const CACHE_MS = 20_000;
 const held = new Map<string, { at: number; teams: HubTeam[]; unreachable: string[] }>();
-export function invalidateTeamHubCache(): void { held.clear(); }
+const inFlight = new Map<string, Promise<{ teams: HubTeam[]; unreachable: string[] }>>();
+export function invalidateTeamHubCache(): void { held.clear(); inFlight.clear(); }
 
 /** Runs one team operation on the team's host: here, or on the machine that hosts it. */
 async function call<T>(member: ClusterMember, hostNodeId: string, operation: Operation, body: Record<string, unknown>): Promise<T> {
@@ -62,29 +63,41 @@ export const hubTeams = async (session: AuthSession, fresh = false): Promise<Hub
 export async function hubOverview(session: AuthSession, fresh = false): Promise<{ teams: HubTeam[]; unreachable: string[] }> {
   const known = held.get(session.accountId);
   if (!fresh && known && Date.now() - known.at < CACHE_MS) return known;
-  const context = await peers(), here = await getClusterNode();
-  // A person signed in here with their account from another machine is a member through the cluster's signed membership, not a local row.
-  const members = new Map<string, ClusterMember>();
-  for (const cluster of context.clusters) {
-    try { members.set(cluster.id, await requireClusterMember(session, cluster.id)); } catch { /* not a member of this one */ }
+  if (!fresh) {
+    const pending = inFlight.get(session.accountId);
+    if (pending) return pending;
   }
-  const mine = context.clusters.filter(cluster => members.has(cluster.id)), unreachable = new Set<string>();
-  // Another machine takes a request as coming from the person's home machine only, so a visitor steers the teams of the machine they are on.
-  const lookups = mine.flatMap(cluster => [here.id, ...members.get(cluster.id)!.homeNodeId === here.id ? context.nodes.filter(node => node.clusterIds.includes(cluster.id)).map(node => node.nodeId) : []].map(async hostNodeId => {
-    try {
-      const member = members.get(cluster.id)!;
-      const hostName = hostNodeId === here.id ? here.name : context.nodes.find(node => node.nodeId === hostNodeId)?.name ?? hostNodeId;
-      return await teamsOn(member, hostNodeId, getSharingCluster(context.db, cluster.id).name, hostName);
-    } catch (error) {
-      console.warn(`Could not list the teams of "${cluster.name}" on ${hostNodeId}: ${error instanceof Error ? error.message : error}`);
-      unreachable.add(cluster.id);
-      return [];
+  const run = (async () => {
+    const context = await peers(), here = await getClusterNode();
+    // A person signed in here with their account from another machine is a member through the cluster's signed membership, not a local row.
+    const members = new Map<string, ClusterMember>();
+    for (const cluster of context.clusters) {
+      try { members.set(cluster.id, await requireClusterMember(session, cluster.id)); } catch { /* not a member of this one */ }
     }
-  }));
-  const teams = (await Promise.all(lookups)).flat().sort((a, b) => a.clusterName.localeCompare(b.clusterName) || a.hostName.localeCompare(b.hostName));
-  const overview = { at: Date.now(), teams, unreachable: [...unreachable] };
-  held.set(session.accountId, overview);
-  return overview;
+    const mine = context.clusters.filter(cluster => members.has(cluster.id)), unreachable = new Set<string>();
+    // Another machine takes a request as coming from the person's home machine only, so a visitor steers the teams of the machine they are on.
+    const lookups = mine.flatMap(cluster => [here.id, ...members.get(cluster.id)!.homeNodeId === here.id ? context.nodes.filter(node => node.clusterIds.includes(cluster.id)).map(node => node.nodeId) : []].map(async hostNodeId => {
+      try {
+        const member = members.get(cluster.id)!;
+        const hostName = hostNodeId === here.id ? here.name : context.nodes.find(node => node.nodeId === hostNodeId)?.name ?? hostNodeId;
+        return await teamsOn(member, hostNodeId, getSharingCluster(context.db, cluster.id).name, hostName);
+      } catch (error) {
+        console.warn(`Could not list the teams of "${cluster.name}" on ${hostNodeId}: ${error instanceof Error ? error.message : error}`);
+        unreachable.add(cluster.id);
+        return [];
+      }
+    }));
+    const teams = (await Promise.all(lookups)).flat().sort((a, b) => a.clusterName.localeCompare(b.clusterName) || a.hostName.localeCompare(b.hostName));
+    const overview = { at: Date.now(), teams, unreachable: [...unreachable] };
+    held.set(session.accountId, overview);
+    return overview;
+  })();
+  if (!fresh) inFlight.set(session.accountId, run);
+  try {
+    return await run;
+  } finally {
+    if (inFlight.get(session.accountId) === run) inFlight.delete(session.accountId);
+  }
 }
 
 async function teamFor(session: AuthSession, teamId: string): Promise<{ team: HubTeam; member: ClusterMember }> {

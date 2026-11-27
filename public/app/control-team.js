@@ -46,7 +46,7 @@ const sidebarHead = makeNode('div', 'team-sidebar-head');
 sidebarHead.append(makeNode('span', 'team-sidebar-title', 'TEAMS'));
 const sidebarList = makeNode('div', 'team-sidebar-list');
 sidebarList.dataset.testid = 'team-sidebar-list';
-const sidebarNewBtn = makeButton('+ New team with Chief…', 'team-sidebar-new', () => launchWizard());
+const sidebarNewBtn = makeButton('+ New team with Chief…', 'team-sidebar-new', () => Promise.resolve().then(launchWizard).catch(fail));
 sidebarNewBtn.className = 'ghost compact team-sidebar-new';
 sidebarSection.append(sidebarHead, sidebarList, sidebarNewBtn);
 document.querySelector('#controlTabs').before(sidebarSection);
@@ -215,12 +215,18 @@ const deleteButton = (teamId, name) => {
   return btn;
 };
 
-async function launchWizard() {
-  await loadTeams(true);
+let teamsLoaded = false, teamsLoadPromise = null;
+
+function launchWizard() {
+  if (document.querySelector('[data-testid="team-wizard-dialog"]')) return;
   openNewTeamWizard({
     clusters: knownClusters,
     teams: [...hubTeams.values()],
     unreachable: knownUnreachable,
+    loadInitial: teamsLoaded ? null : async () => {
+      await loadTeams(false);
+      return { clusters: knownClusters, teams: [...hubTeams.values()], unreachable: knownUnreachable };
+    },
     onTeamCreated: () => { void loadTeams(true); },
     onLaunch: async newTeamId => {
       await loadTeams(true);
@@ -229,23 +235,32 @@ async function launchWizard() {
   });
 }
 
-async function loadTeams(force = false) {
-  if (!force && select.options.length) return;
-  const previous = select.value;
-  const [{ clusters }, { teams, unreachable }] = await Promise.all([api('/api/clusters'), api('/api/team-hub?fresh=1')]);
-  knownClusters = clusters ?? [];
-  knownUnreachable = unreachable ?? [];
-  hubTeams = new Map((teams ?? []).map(item => [item.id, item]));
-  const options = [new Option(teams.length || clusters.length ? 'Select a team' : 'No cluster yet', '')];
-  for (const item of teams) {
-    const label = item.name || item.clusterName;
-    options.push(new Option(item.local ? label : `${label} — on ${item.hostName}`, item.local ? item.id : `remote:${item.id}`));
-  }
-  select.replaceChildren(...options);
-  if (previous && [...select.options].some(o => o.value === previous)) select.value = previous;
-  const creatable = clusters.filter(cluster => !teams.some(item => item.clusterId === cluster.id) && !unreachable.includes(cluster.id));
-  newTeamButtons.replaceChildren(...creatable.map(cluster => button(`+ New team (${cluster.name})`, 'team-new', () => launchWizard())));
-  syncMobile();
+async function loadTeams(force = false, { fresh = force } = {}) {
+  if (!force && teamsLoaded) return;
+  if (!force && teamsLoadPromise) return teamsLoadPromise;
+  const run = (async () => {
+    const previous = select.value;
+    const [{ clusters }, { teams, unreachable }] = await Promise.all([
+      api('/api/clusters'),
+      api(fresh ? '/api/team-hub?fresh=1' : '/api/team-hub'),
+    ]);
+    knownClusters = clusters ?? [];
+    knownUnreachable = unreachable ?? [];
+    hubTeams = new Map((teams ?? []).map(item => [item.id, item]));
+    teamsLoaded = true;
+    const options = [new Option(teams.length || clusters.length ? 'Select a team' : 'No cluster yet', '')];
+    for (const item of teams) {
+      const label = item.name || item.clusterName;
+      options.push(new Option(item.local ? label : `${label} — on ${item.hostName}`, item.local ? item.id : `remote:${item.id}`));
+    }
+    select.replaceChildren(...options);
+    if (previous && [...select.options].some(o => o.value === previous)) select.value = previous;
+    const creatable = clusters.filter(cluster => !teams.some(item => item.clusterId === cluster.id) && !unreachable.includes(cluster.id));
+    newTeamButtons.replaceChildren(...creatable.map(cluster => button(`+ New team (${cluster.name})`, 'team-new', () => launchWizard())));
+    syncMobile();
+  })();
+  teamsLoadPromise = run.finally(() => { if (teamsLoadPromise === run) teamsLoadPromise = null; });
+  return teamsLoadPromise;
 }
 
 function updateLiveBadges() {

@@ -17,7 +17,7 @@ const STEPS = [
 ];
 
 /** Opens the 4-step Chief-led team setup wizard. */
-export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [], onTeamCreated, onLaunch } = {}) {
+export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [], loadInitial = null, onTeamCreated, onLaunch } = {}) {
   const dialog = document.createElement('dialog');
   dialog.className = 'team-modal-dialog team-wizard-dialog';
   dialog.dataset.testid = 'team-wizard-dialog';
@@ -48,7 +48,31 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
   const stopPoll = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
   dialog.addEventListener('close', () => { stopPoll(); dialog.remove(); });
 
-  const creatable = clusters.filter(c => !teams.some(t => t.clusterId === c.id) && !unreachable.includes(c.id));
+  let wizardClusters = clusters;
+  let wizardTeams = teams;
+  let wizardUnreachable = unreachable;
+  let initialLoading = Boolean(loadInitial);
+  let initialError = '';
+
+  const getCreatable = () => wizardClusters.filter(c => !wizardTeams.some(t => t.clusterId === c.id) && !wizardUnreachable.includes(c.id));
+
+  async function runInitialLoad() {
+    if (!loadInitial) return;
+    initialLoading = true;
+    initialError = '';
+    if (dialog.open && step === 1) renderStep1();
+    try {
+      const loaded = await loadInitial();
+      wizardClusters = loaded?.clusters ?? [];
+      wizardTeams = loaded?.teams ?? [];
+      wizardUnreachable = loaded?.unreachable ?? [];
+    } catch (err) {
+      initialError = err?.message || 'Could not load clusters and teams.';
+    } finally {
+      initialLoading = false;
+      if (dialog.open && step === 1) renderStep1();
+    }
+  }
 
   function drawStepper() {
     stepper.replaceChildren(...STEPS.map(item => {
@@ -79,11 +103,11 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
   }
 
   function buildClusterOptions() {
-    const teamByCluster = new Map(teams.map(t => [t.clusterId, t]));
+    const teamByCluster = new Map(wizardTeams.map(t => [t.clusterId, t]));
     const available = [];
     const existing = [];
     const unavailable = [];
-    for (const cluster of clusters) {
+    for (const cluster of wizardClusters) {
       const existingTeam = teamByCluster.get(cluster.id);
       if (existingTeam) {
         const label = existingTeam.name || existingTeam.clusterName || cluster.name;
@@ -95,7 +119,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
           group: 'Already has a team',
           disabled: true,
         });
-      } else if (unreachable.includes(cluster.id)) {
+      } else if (wizardUnreachable.includes(cluster.id)) {
         unavailable.push({
           value: cluster.id,
           label: cluster.name,
@@ -120,6 +144,21 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
     const wrap = makeNode('div', 'team-wizard-pane');
     wrap.append(makeNode('h3', '', '1. Pick Cluster, Team Name & Chief'), makeNode('p', 'team-muted', 'Choose which cluster hosts this team, give it a custom name, and choose who acts as your Chief (/chief).'));
 
+    if (initialLoading) {
+      wrap.append(makeNode('p', 'team-muted', 'Loading clusters & teams…'));
+      body.append(wrap);
+      return;
+    }
+    if (initialError) {
+      wrap.append(makeNode('p', 'team-error-inline', initialError));
+      const retry = makeButton('Retry', 'team-wizard-retry-load', () => { void runInitialLoad(); });
+      retry.className = 'ghost compact';
+      wrap.append(retry);
+      body.append(wrap);
+      return;
+    }
+
+    const creatable = getCreatable();
     const clusterOptions = buildClusterOptions();
     const clusterField = makeNode('div', 'team-field team-wizard-cluster-field');
     const clusterLabel = makeNode('label', 'team-section-eyebrow', 'CLUSTER');
@@ -137,11 +176,11 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
 
     if (!creatable.length) {
       if (clusterOptions.length) wrap.append(clusterField);
-      wrap.append(makeNode('p', 'team-muted', clusters.length
+      wrap.append(makeNode('p', 'team-muted', wizardClusters.length
         ? 'Every cluster you joined already has a team on this host (or has an unreachable peer). Continue configuring an existing team below, or create a new cluster in Settings → Clusters.'
         : 'No cluster found yet. Create a cluster in Settings → Clusters first.'));
       const existingList = makeNode('div', 'team-wizard-clusters');
-      for (const existing of teams.filter(t => t.local)) {
+      for (const existing of wizardTeams.filter(t => t.local)) {
         const pick = makeButton(`Continue setup: ${existing.name || existing.clusterName}`, `team-wizard-continue-${existing.id}`, () => {
           teamId = existing.id; teamName = existing.name || existing.clusterName; step = 2; drawStep();
         });
@@ -168,7 +207,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
       chosenCluster = next;
     });
 
-    const localExisting = teams.filter(t => t.local);
+    const localExisting = wizardTeams.filter(t => t.local);
     if (localExisting.length) {
       const note = makeNode('div', 'team-wizard-existing-note');
       note.append(makeNode('span', 'team-muted', 'Already has a team (one team per cluster on this host): '));
@@ -578,4 +617,5 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
   }
 
   drawStep();
+  if (loadInitial) void runInitialLoad();
 }
