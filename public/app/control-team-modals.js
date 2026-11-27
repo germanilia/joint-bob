@@ -180,7 +180,7 @@ function renderSecretsTab(parent, base, data, reload) {
     if (data.editable) {
       const saveBtn = makeButton('Save secret selection', 'team-conn-save-secrets', async () => {
         await api(`${base}/connections`, { method: 'PUT', body: { secretAccountIds: [...selected] } });
-        toast.info('Secrets updated');
+        toast('Secrets updated');
         await reload();
       });
       saveBtn.className = 'primary compact';
@@ -216,7 +216,7 @@ function renderSecretsTab(parent, base, data, reload) {
           method: 'POST',
           body: { label: label.value.trim(), provider: provider.value, variables: [{ name: varName.value.trim().toUpperCase(), value: varVal.value }] },
         });
-        toast.info('Secret saved & attached');
+        toast('Secret saved & attached');
         await reload();
       } catch (err) { toast.error(err.message); }
     });
@@ -238,14 +238,14 @@ function renderBrowserTab(parent, base, data, reload) {
       const openBtn = makeButton(`Open Live Browser on ${data.host.name}`, `team-login-open-${login.profileId}`, async () => {
         const res = await api(`${base}/logins/${encodeURIComponent(login.profileId)}/open`, { method: 'POST', body: {} });
         openLiveBrowserUrl(res.session);
-        toast.info(`Opened ${login.label} on ${data.host.name}`);
+        toast(`Opened ${login.label} on ${data.host.name}`);
       });
       openBtn.className = 'primary compact';
       actions.append(openBtn);
       if (data.editable) {
         const detachBtn = makeButton('Detach', `team-login-detach-${login.profileId}`, async () => {
           await api(`${base}/logins/${encodeURIComponent(login.profileId)}`, { method: 'DELETE' });
-          toast.info(`Detached ${login.label}`);
+          toast(`Detached ${login.label}`);
           await reload();
         });
         detachBtn.className = 'ghost compact';
@@ -264,7 +264,7 @@ function renderBrowserTab(parent, base, data, reload) {
     for (const item of data.savedLogins) pick.append(new Option(`${item.label}${item.sites.length ? ` (${item.sites.join(', ')})` : ''}`, item.profileId));
     const btn = makeButton('Attach profile', 'team-login-attach', async () => {
       await api(`${base}/logins/attach`, { method: 'POST', body: { profileId: pick.value } });
-      toast.info('Browser profile attached');
+      toast('Browser profile attached');
       await reload();
     });
     btn.className = 'ghost compact';
@@ -297,7 +297,7 @@ function renderBrowserTab(parent, base, data, reload) {
       try {
         const started = await api(`${base}/logins`, { method: 'POST', body: { label: label.value.trim(), url: url.value.trim() } });
         openLiveBrowserUrl(started.session);
-        toast.info(`Live browser started on ${data.host.name}`);
+        toast(`Live browser started on ${data.host.name}`);
         await reload();
       } catch (err) { toast.error(err.message); }
     });
@@ -336,7 +336,7 @@ function renderMcpTab(parent, base, data, reload) {
   if (data.editable) {
     const save = makeButton('Save MCP access', 'team-conn-save-mcp', async () => {
       await api(`${base}/connections`, { method: 'PUT', body: { mcpServerNames: allBox.checked ? null : [...selected] } });
-      toast.info('MCP access updated');
+      toast('MCP access updated');
       await reload();
     });
     save.className = 'primary compact';
@@ -377,7 +377,7 @@ function renderSkillsTab(parent, base, data, reload) {
   if (data.editable) {
     const save = makeButton('Save skills & tools', 'team-conn-save-skills', async () => {
       await api(`${base}/connections`, { method: 'PUT', body: { allowBrowser: browserBox.checked, allowTerminal: termBox.checked, disabledSkills: [...disabled] } });
-      toast.info('Skills & permissions updated');
+      toast('Skills & permissions updated');
       await reload();
     });
     save.className = 'primary compact';

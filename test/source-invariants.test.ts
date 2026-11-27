@@ -48,6 +48,13 @@ test("the UI exposes no peer bearer tokens or hardcoded account token inputs", a
   assert.doesNotMatch(html + app, /personalTokenInput|selaTokenInput/);
 });
 
+test("app code calls only the toast helpers shell.js defines", async () => {
+  const [shell, app] = await Promise.all([readFile("public/app/shell.js", "utf8"), appSource()]);
+  const defined = new Set([...shell.matchAll(/^toast\.(\w+) = /gm)].map((match) => match[1]));
+  const called = new Set([...app.matchAll(/\btoast\.(\w+)\(/g)].map((match) => match[1]));
+  assert.deepEqual([...called].filter((name) => !defined.has(name)), []);
+});
+
 test("built-in tool names survive the terminal and browser filters", () => {
   const names = jointBobTools().map((tool) => `mcp__${JOINT_BOB_TOOL_SERVER}__${tool.name}`);
   assert.deepEqual(names, ["mcp__joint_bob__list_assistants", "mcp__joint_bob__ask_assistant", "mcp__joint_bob__ask_result"]);
