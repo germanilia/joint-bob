@@ -19,7 +19,7 @@ import { getClusterNode } from "../cluster.js";
 import { getRuntimePeer, runtimeSocketHeaders, signedSocketPeer, trackRuntimeSocket } from "./runtime-peers.js";
 import { clusterPeerMayAccessProject, peerMayOpenTerminal, peerMayRunHere } from "./cluster-helpers.js";
 import { type ConversationEngine, getConversationOwnership } from "../conversation-ownership.js";
-import { ensureConversationRecord, getConversationRecord, listConversationSegments, parseConversationDraftPath, setConversationWorktree } from "../conversation-records.js";
+import { deletedConversationKeys, ensureConversationRecord, getConversationRecord, listConversationSegments, parseConversationDraftPath, setConversationWorktree } from "../conversation-records.js";
 import { conversationPrivacy, privateConversationMayTravel, privateConversationVisible } from "../conversation-privacy.js";
 import { findConversation, findHarnessSession, harnessForSessionPath, listHarnesses, listHarnessSessions } from "../harnesses.js";
 import { getProjectLock } from "../project-locks.js";
@@ -428,6 +428,11 @@ async function handleBrowserConnection(socket: WebSocket, request: IncomingMessa
   const validRequestedSessionId = requestedSessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedSessionId) ? requestedSessionId : undefined;
   const ownershipSessionId = listedSession && !listedSession.draft ? listedSession.id : sessionRequest.draft?.sessionId ?? validRequestedSessionId ?? randomUUID();
   if (!await canOpen(ownershipSessionId)) { socket.close(1008, "Conversation not found"); return; }
+  // A delete writes its tombstone before the transcript file goes, and a peer's tombstone arrives
+  // before file sync removes this node's copy, so a reconnecting browser can still find the file.
+  if (listedSession && (await deletedConversationKeys(project.id)).has(`${sessionRequest.engine}:${ownershipSessionId}`)) {
+    socket.close(1008, "Conversation not found"); return;
+  }
   const sessionReadOnly = listedSession?.readOnly === true;
   let foreignOwner: ForeignConversationOwner | null = null;
   if (!sessionReadOnly && !peerReadOnly) {
