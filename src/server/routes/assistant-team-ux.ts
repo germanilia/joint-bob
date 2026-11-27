@@ -374,7 +374,7 @@ export function registerAssistantTeamUxRoutes(): void {
     if (!profileId) throw new TeamError('Browser started without a saved profile', 500);
     await browserOperation({
       operation: 'command',
-      args: { sessionId: started.session.id, command: { action: 'takeControl', force: true } },
+      args: { id: started.session.id, command: { action: 'takeControl', force: true } },
     }, await humanActor(auth), local.id).catch(() => {});
     const db = await personalAssistantDatabase();
     db.prepare('INSERT OR IGNORE INTO personal_assistant_logins (assistant_id, profile_id, created_at) VALUES (?,?,?)').run(profile.id, profileId, new Date().toISOString());
@@ -406,7 +406,7 @@ export function registerAssistantTeamUxRoutes(): void {
     }, await humanActor(auth), local.id) as { session: BrowserSessionView };
     await browserOperation({
       operation: 'command',
-      args: { sessionId: started.session.id, command: { action: 'takeControl', force: true } },
+      args: { id: started.session.id, command: { action: 'takeControl', force: true } },
     }, await humanActor(auth), local.id).catch(() => {});
     return {
       login: await loginState(profileId, profile),
