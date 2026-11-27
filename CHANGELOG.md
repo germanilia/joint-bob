@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.345.3 — 2026-11-27
+
+- **Assistant Teams:** Team pages now show their confirmations again. Approving a blueprint, choosing a voice-brief provider, saving team settings, saving or deleting a memory topic, reverting a change, deleting a team, and updating a member’s secrets, browser profiles, MCP access or skills each saved the change, then failed with "toast.info is not a function" instead of confirming it, and sent an error report. An approved blueprint also did not refresh its view.
+
 ## 2.345.2 — 2026-11-27
 
 - **Background tasks:** A turn no longer fails with "Pi credential refresh failed … cannot rollback - no transaction is active" when the task supervisor happens to be writing as an agent's background-task access is renewed. Joint Bob now waits briefly for that write to finish, as it already does everywhere else it opens the task database. A lock that lasts too long is reported as "database is locked" instead of the rollback error.
