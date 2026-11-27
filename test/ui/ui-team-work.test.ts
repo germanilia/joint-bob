@@ -44,6 +44,36 @@ test('Back to Assistants exits a team without deleting it and keeps navigation s
   assert.equal(await page.getByTestId('team-select').inputValue(), '');
 });
 
+test('Delete team leaves the deleted team: its view closes and it is no longer polled', { timeout: 120_000 }, async t => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  const auth = await signIn(environment, node);
+  const cluster = await api<any>(node, auth, 'POST', '/clusters', { name: 'Delete team' });
+  const created = await api<any>(node, auth, 'POST', '/assistant-teams', { clusterId: cluster.body.snapshot.body.clusterId });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const teamId = created.body.team.id;
+  let loading = 0, lastLoad = Date.now();
+  const isTeamList = (request: any) => new URL(request.url()).pathname === '/api/team-hub';
+  const loaded = (request: any) => { if (isTeamList(request)) { loading--; lastLoad = Date.now(); } };
+  page.on('request', (request: any) => { if (isTeamList(request)) { loading++; lastLoad = Date.now(); } });
+  page.on('requestfinished', loaded);
+  page.on('requestfailed', loaded);
+  await openTeams(page, environment, node);
+  // Picking a team while the list is still loading loses the pick, so wait for the loads to finish.
+  while (loading > 0 || Date.now() - lastLoad < 2_000) await page.waitForTimeout(200);
+  await page.getByTestId(`team-sidebar-item-${teamId}`).click();
+  await page.getByTestId('team-tab-settings').click();
+  await page.getByTestId('team-delete').click();
+  await page.getByTestId('confirm-accept-button').click();
+  await page.waitForFunction(() => !document.body.classList.contains('team-context-active'));
+  const afterDelete: string[] = [];
+  page.on('request', (request: any) => { if (request.url().includes(teamId)) afterDelete.push(`${request.method()} ${new URL(request.url()).pathname}`); });
+  assert.equal(await page.getByTestId('team-select').inputValue(), '');
+  assert.equal((await api(node, auth, 'GET', `/assistant-teams/${teamId}`)).status, 404, 'the team is gone');
+  await page.waitForTimeout(5_000); // longer than the work view's 4-second poll
+  assert.deepEqual(afterDelete, [], 'nothing keeps asking for the deleted team');
+  assert.equal(await page.getByTestId('team-delete').count(), 0, 'no second Delete is offered for it');
+});
+
 test('a team on this machine takes work from the app: send it, stop a request, run it again', { timeout: 240_000 }, async t => {
   const { page, environment, node } = await nativeUiFixture(t);
   const auth = await signIn(environment, node);

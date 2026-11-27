@@ -201,8 +201,10 @@ const deleteButton = (teamId, name) => {
   const btn = button('Delete team', 'team-delete', async () => {
     if (!await confirmAction({ eyebrow: 'Assistant team', title: `Delete "${name}"?`, message: "Its members stay as assistants; the team's conversations, memory and requests are removed.", confirmLabel: 'Delete team', destructive: true })) return;
     await api(`/api/team-hub/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
-    await loadTeams(true);
+    // Leave first: reloading drops the deleted team's option and clears the picker without a change event,
+    // which would leave its view and polling open.
     exitTeamContext();
+    await loadTeams(true);
     toast(`Deleted ${name}`);
   });
   btn.className = 'ghost compact danger';
