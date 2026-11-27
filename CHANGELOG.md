@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.345.4 — 2026-11-27
+
+- **Assistant Teams:** A team member's Connect services window opens its Secrets & API tab again. Whenever the host had a secret that could be attached, the tab failed with "undefined is not an object (evaluating 'secret.variableNames.join')" and sent an error report. It now lists each secret's variable names.
+- **MCP servers:** Adding an MCP server now names every agent that can use a shared connection, including Google Antigravity, instead of "all three agents". The setup guide says the same.
+
 ## 2.345.3 — 2026-11-27
 
 - **Assistant Teams:** Team pages now show their confirmations again. Approving a blueprint, choosing a voice-brief provider, saving team settings, saving or deleting a memory topic, reverting a change, deleting a team, and updating a member’s secrets, browser profiles, MCP access or skills each saved the change, then failed with "toast.info is not a function" instead of confirming it, and sent an error report. An approved blueprint also did not refresh its view.
