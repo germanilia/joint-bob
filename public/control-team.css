@@ -159,8 +159,9 @@
 .team-wizard-pane { display: flex; flex-direction: column; gap: 12px; }
 .team-wizard-pane h3 { margin: 0; font-size: 17px; }
 .team-wizard-clusters { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-.team-cluster-card { display: flex; flex-direction: column; gap: 3px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--text); text-align: left; cursor: pointer; }
-.team-cluster-card.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.team-wizard-cluster-field .searchable-select,
+.team-wizard-cluster-field .searchable-select-trigger { width: 100%; }
+.team-wizard-existing-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; margin-top: 2px; }
 .team-wizard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .team-wizard-bob-toggle { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
 .team-wizard-roster { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

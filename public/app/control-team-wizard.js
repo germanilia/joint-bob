@@ -1,6 +1,7 @@
 // 4-step Chief-led New Team Setup Wizard.
 import { api as request } from './api.js';
 import { makeButton, makeNode } from './relay-ui.js';
+import { createSearchableSelect } from './searchable-select.js';
 import { toast } from './shell.js';
 import { openMemberConnectionsModal } from './control-team-modals.js';
 import { renderTeamTelegram } from './control-team-telegram.js';
@@ -76,14 +77,67 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
     } catch { hostAssistants = []; }
   }
 
+  function buildClusterOptions() {
+    const teamByCluster = new Map(teams.map(t => [t.clusterId, t]));
+    const available = [];
+    const existing = [];
+    const unavailable = [];
+    for (const cluster of clusters) {
+      const existingTeam = teamByCluster.get(cluster.id);
+      if (existingTeam) {
+        const label = existingTeam.name || existingTeam.clusterName || cluster.name;
+        existing.push({
+          value: cluster.id,
+          label: cluster.name,
+          detail: existingTeam.local ? `Already has team "${label}" on this node` : `Already has team "${label}" on ${existingTeam.hostName}`,
+          keywords: label,
+          group: 'Already has a team',
+          disabled: true,
+        });
+      } else if (unreachable.includes(cluster.id)) {
+        unavailable.push({
+          value: cluster.id,
+          label: cluster.name,
+          detail: 'Cluster peer unreachable — retry when online',
+          group: 'Unavailable',
+          disabled: true,
+        });
+      } else {
+        available.push({
+          value: cluster.id,
+          label: cluster.name,
+          detail: 'Hosted on this node',
+          group: 'Available clusters',
+        });
+      }
+    }
+    return [...available, ...existing, ...unavailable];
+  }
+
   function renderStep1() {
     body.replaceChildren();
     const wrap = makeNode('div', 'team-wizard-pane');
     wrap.append(makeNode('h3', '', '1. Pick Cluster, Team Name & Chief'), makeNode('p', 'team-muted', 'Choose which cluster hosts this team, give it a custom name, and choose who acts as your Chief (/chief).'));
 
+    const clusterOptions = buildClusterOptions();
+    const clusterField = makeNode('div', 'team-field team-wizard-cluster-field');
+    const clusterLabel = makeNode('label', 'team-section-eyebrow', 'CLUSTER');
+    clusterLabel.htmlFor = 'teamWizardCluster';
+    const clusterSelect = createSearchableSelect({
+      id: 'teamWizardCluster',
+      testid: 'team-wizard-cluster',
+      label: 'Cluster',
+      prompt: 'Choose a cluster…',
+      placeholder: 'Search clusters…',
+      emptyText: 'No matching clusters',
+    });
+    clusterSelect.setOptions(clusterOptions);
+    clusterField.append(clusterLabel, clusterSelect.root);
+
     if (!creatable.length) {
+      if (clusterOptions.length) wrap.append(clusterField);
       wrap.append(makeNode('p', 'team-muted', clusters.length
-        ? 'Every cluster you joined already has a team on this host. You can continue configuring an existing team below, or create a new cluster in Settings → Clusters.'
+        ? 'Every cluster you joined already has a team on this host (or has an unreachable peer). Continue configuring an existing team below, or create a new cluster in Settings → Clusters.'
         : 'No cluster found yet. Create a cluster in Settings → Clusters first.'));
       const existingList = makeNode('div', 'team-wizard-clusters');
       for (const existing of teams.filter(t => t.local)) {
@@ -99,27 +153,33 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
     }
 
     let chosenCluster = creatable[0];
-    const clusterGrid = makeNode('div', 'team-wizard-clusters');
+    clusterSelect.setValue(chosenCluster.id);
     const nameField = document.createElement('input');
     nameField.type = 'text';
     nameField.value = chosenCluster.name;
     nameField.placeholder = 'e.g. Home, DevOps On-Call';
     nameField.dataset.testid = 'team-wizard-name';
 
-    const drawClusters = () => {
-      clusterGrid.replaceChildren(...creatable.map(cluster => {
-        const cardBtn = makeNode('button', `team-cluster-card${chosenCluster.id === cluster.id ? ' selected' : ''}`);
-        cardBtn.type = 'button';
-        cardBtn.append(makeNode('strong', '', cluster.name), makeNode('small', 'team-muted', 'Hosted on this node'));
-        cardBtn.addEventListener('click', () => {
-          if (nameField.value === chosenCluster.name || !nameField.value.trim()) nameField.value = cluster.name;
-          chosenCluster = cluster;
-          drawClusters();
+    clusterSelect.onChange(clusterId => {
+      const next = creatable.find(c => c.id === clusterId);
+      if (!next) return;
+      if (nameField.value === chosenCluster.name || !nameField.value.trim()) nameField.value = next.name;
+      chosenCluster = next;
+    });
+
+    const localExisting = teams.filter(t => t.local);
+    if (localExisting.length) {
+      const note = makeNode('div', 'team-wizard-existing-note');
+      note.append(makeNode('span', 'team-muted', 'Already has a team (one team per cluster on this host): '));
+      for (const existing of localExisting) {
+        const jump = makeButton(`Continue ${existing.name || existing.clusterName} →`, `team-wizard-continue-${existing.id}`, () => {
+          teamId = existing.id; teamName = existing.name || existing.clusterName; step = 2; drawStep();
         });
-        return cardBtn;
-      }));
-    };
-    drawClusters();
+        jump.className = 'ghost compact';
+        note.append(jump);
+      }
+      clusterField.append(note);
+    }
 
     const grid = makeNode('div', 'team-wizard-grid');
     const teamNameLabel = makeNode('label', 'team-field');
@@ -193,7 +253,7 @@ export function openNewTeamWizard({ clusters = [], teams = [], unreachable = [],
     createBtn.className = 'primary';
     footer.append(createBtn);
 
-    wrap.append(makeNode('span', 'team-section-eyebrow', 'CLUSTER'), clusterGrid, grid, allowBobLabel, footer);
+    wrap.append(clusterField, grid, allowBobLabel, footer);
     body.append(wrap);
   }
 
