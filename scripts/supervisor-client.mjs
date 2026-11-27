@@ -55,12 +55,15 @@ export function mintTaskToken(dataDirectory, identity) {
   const hash = createHash("sha256").update(token).digest("hex");
   const database = new DatabaseSync(location.file);
   try {
+    // The supervisor writes this database too; wait out its short writes as its other openers do.
+    database.exec("PRAGMA busy_timeout=5000");
     database.exec("BEGIN IMMEDIATE");
-    database.prepare("DELETE FROM supervisor_task_tokens WHERE expires_at<=?").run(Date.now());
-    database.prepare("INSERT INTO supervisor_task_tokens VALUES(?,?,?)").run(hash, identity, Date.now() + 30 * 86400_000);
-    database.exec("COMMIT");
-  } catch (error) { database.exec("ROLLBACK"); throw error; }
-  finally { database.close(); }
+    try {
+      database.prepare("DELETE FROM supervisor_task_tokens WHERE expires_at<=?").run(Date.now());
+      database.prepare("INSERT INTO supervisor_task_tokens VALUES(?,?,?)").run(hash, identity, Date.now() + 30 * 86400_000);
+      database.exec("COMMIT");
+    } catch (error) { database.exec("ROLLBACK"); throw error; }
+  } finally { database.close(); }
   return token;
 }
 export function requestSupervisor(socketPath, token, body, timeoutMs = 15000) {

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { runSupervisedShell } from "../scripts/supervised-shell.mjs";
 import { startSupervisor } from "../scripts/joint-bob-supervisor.mjs";
 import { mintTaskToken, readSupervisorControl, requestSupervisor } from "../scripts/supervisor-client.mjs";
@@ -15,6 +17,7 @@ import { openNodeDatabase } from "../src/node-database.js";
 const identity = JSON.stringify(["p", "c"]);
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const execute = promisify(execFile);
 
 async function eventually<T>(read: () => Promise<T>, accept: (value: T) => boolean, message: string): Promise<T> {
   const deadline = Date.now() + 8_000;
@@ -79,6 +82,28 @@ test("short supervised commands complete and stay out of the Tasks view", { time
     const db = openNodeDatabase(path.join(f.state, "node.db"), { readOnly: true });
     try { assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name='background_completion_outbox'").get(), undefined, "finished commands must not be queued for delivery"); }
     finally { db.close(); }
+  } finally { await f.runtime.close(); await rm(f.root, { recursive: true, force: true }); }
+});
+
+test("minting a task token waits for another writer of the supervisor database", { timeout: 20_000, concurrency: false }, async () => {
+  const f = await fixture();
+  try {
+    // test/setup.mjs gives this process's connections a busy timeout the app's lack, so the
+    // writer and the minting run in processes of their own.
+    const holder = spawn(process.execPath, ["-e", `
+      const { DatabaseSync } = require("node:sqlite");
+      const database = new DatabaseSync(process.argv[1]);
+      database.exec("BEGIN IMMEDIATE");
+      process.stdout.write("locked\\n");
+      setTimeout(() => { database.exec("COMMIT"); database.close(); }, 1000);
+    `, path.join(f.state, "supervisor.db")], { stdio: ["ignore", "pipe", "inherit"] });
+    const released = new Promise<number | null>((resolve) => holder.once("close", resolve));
+    await new Promise<void>((resolve) => holder.stdout!.once("data", () => resolve()));
+    const minted = await execute(process.execPath, ["--input-type=module", "-e",
+      "const { mintTaskToken } = await import(process.argv[1]); process.stdout.write(mintTaskToken(process.argv[2], process.argv[3]));",
+      pathToFileURL(path.resolve("scripts/supervisor-client.mjs")).href, f.state, identity]);
+    assert.equal(await released, 0);
+    assert.deepEqual(await requestSupervisor(f.control.socketPath, minted.stdout, { action: "list" }), []);
   } finally { await f.runtime.close(); await rm(f.root, { recursive: true, force: true }); }
 });
 
