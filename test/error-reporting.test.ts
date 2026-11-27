@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
@@ -263,4 +263,48 @@ test("an unhandled rejection is logged and reported without stopping the node, a
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("a fresh process suppresses a webhook error already reported on the node", async (t) => {
+  const { updateErrorWebhookSettings } = await import("../src/error-webhook.js");
+  updateErrorWebhookSettings({ enabled: true, url: "https://errors.example.invalid/hooks/restart-test" });
+  t.after(() => updateErrorWebhookSettings({ enabled: false, url: "" }));
+  t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 202 }));
+  const now = Date.now();
+  const report = { summary: "Restart fixture error" };
+  assert.equal(await reportError("backend", report, now), true);
+
+  const reportingModule = new URL("../src/error-reporting.ts", import.meta.url).href;
+  const child = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    const { reportError } = await import(${JSON.stringify(reportingModule)});
+    let posts = 0;
+    globalThis.fetch = async () => { posts++; return new Response(null, { status: 202 }); };
+    await reportError("backend", ${JSON.stringify(report)}, ${now + 60_000});
+    assert.equal(posts, 0, "a restart must not send the same error again");
+  `], { encoding: "utf8", timeout: 15_000 });
+  assert.equal(child.status, 0, child.error?.message ?? child.stderr);
+});
+
+test("each webhook repeat restarts the 24-hour quiet window", async (t) => {
+  const { updateErrorWebhookSettings } = await import("../src/error-webhook.js");
+  updateErrorWebhookSettings({ enabled: true, url: "https://errors.example.invalid/hooks/quiet-window-test" });
+  t.after(() => updateErrorWebhookSettings({ enabled: false, url: "" }));
+  const requests: Request[] = [];
+  t.mock.method(globalThis, "fetch", async (url: URL, init: RequestInit) => {
+    requests.push(new Request(url, init));
+    return new Response(null, { status: 202 });
+  });
+  const now = Date.now();
+  const hour = 60 * 60_000;
+  const first = { summary: "Quiet window fixture: connection refused on port 8790" };
+  const repeat = { summary: "Quiet window fixture: connection refused on port 8791" };
+  assert.equal(await reportError("client", first, now), true);
+  assert.equal(await reportError("client", { summary: "Distinct quiet window fixture error" }, now + 1), true);
+  assert.equal(await reportError("client", repeat, now + 23 * hour), false, "a repeat beyond the old ten-minute window is withheld");
+  assert.equal(await reportError("client", repeat, now + 46 * hour), false, "quiet time starts at the last occurrence, not at the first alert");
+  assert.equal(requests.length, 2);
+  assert.equal(await reportError("client", repeat, now + 70 * hour), true);
+  assert.equal(requests.length, 3);
+  assert.equal((await requests[2].json()).withheld, 2);
 });

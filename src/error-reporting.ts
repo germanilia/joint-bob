@@ -2,7 +2,7 @@ import os from "node:os";
 import { maskLogText } from "../scripts/log-masking.mjs";
 import { z } from "zod";
 import { appVersion } from "./changelog.js";
-import { deliverErrorWebhook, errorWebhookDestination } from "./error-webhook.js";
+import { claimErrorWebhookReport, deliverErrorWebhook, errorWebhookDestination } from "./error-webhook.js";
 import { ntfyTopicName } from "./ntfy-admin.js";
 import { getNtfyService } from "./ntfy.js";
 import { publishNtfyMessage, savedNtfyServer } from "./ntfy-publish.js";
@@ -86,19 +86,24 @@ function errorSignature(summary: string): string {
 }
 
 /** Counts this report against its channel's window; false means it is withheld. */
-function admit(throttles: Map<ErrorChannel, Throttle>, channel: ErrorChannel, summary: string, now: number): { admitted: boolean; withheld: number } {
+function admit(kind: "ntfy" | "webhook", channel: ErrorChannel, summary: string, now: number): { admitted: boolean; withheld: number } {
+  const throttles = kind === "ntfy" ? ntfyThrottles : webhookThrottles;
   let throttle = throttles.get(channel);
   if (!throttle || now - throttle.windowStartedAt >= REPORT_WINDOW_MS) {
     throttle = { windowStartedAt: now, sent: 0, withheld: throttle?.withheld ?? 0, recent: throttle?.recent ?? new Map() };
     throttles.set(channel, throttle);
   }
-  for (const [key, at] of throttle.recent) if (now - at >= REPORT_WINDOW_MS) throttle.recent.delete(key);
   const signature = errorSignature(summary);
-  if (throttle.recent.has(signature) || throttle.sent >= MAX_REPORTS_PER_WINDOW) {
+  const canSend = throttle.sent < MAX_REPORTS_PER_WINDOW;
+  if (kind === "ntfy") {
+    for (const [key, at] of throttle.recent) if (now - at >= REPORT_WINDOW_MS) throttle.recent.delete(key);
+  }
+  const admitted = kind === "webhook" ? claimErrorWebhookReport(channel, signature, now, canSend) : canSend && !throttle.recent.has(signature);
+  if (!admitted) {
     throttle.withheld += 1;
     return { admitted: false, withheld: throttle.withheld };
   }
-  throttle.recent.set(signature, now);
+  if (kind === "ntfy") throttle.recent.set(signature, now);
   throttle.sent += 1;
   const withheld = throttle.withheld;
   throttle.withheld = 0;
@@ -131,13 +136,7 @@ export async function reportError(channel: ErrorChannel, report: ErrorReport, no
     const safe = { summary: maskDiagnostic(summary), ...(detail ? { detail: maskDiagnostic(detail) } : {}), ...(source ? { source: maskDiagnostic(source) } : {}) };
     const deliveries: Promise<boolean>[] = [];
     if (destination) deliveries.push(reportNtfy(channel, destination, ntfySource ? { ...safe, source: maskDiagnostic(ntfySource) } : safe, now));
-    if (webhook) {
-      const { admitted, withheld } = admit(webhookThrottles, channel, safe.summary, now);
-      if (admitted) deliveries.push(deliverErrorWebhook(webhook, { ...safe, channel, withheld, node: os.hostname(), version: appVersion(), reportedAt: new Date(now).toISOString() }).then(() => true, () => {
-        console.warn(`Could not forward a ${channel} error to the configured webhook`);
-        return false;
-      }));
-    }
+    if (webhook) deliveries.push(reportWebhook(channel, webhook, safe, now));
     return (await Promise.all(deliveries)).some(Boolean);
   } catch {
     console.warn(`Could not prepare a ${channel} error report`);
@@ -145,9 +144,21 @@ export async function reportError(channel: ErrorChannel, report: ErrorReport, no
   }
 }
 
+async function reportWebhook(channel: ErrorChannel, destination: URL, report: ErrorReport, now: number): Promise<boolean> {
+  try {
+    const { admitted, withheld } = admit("webhook", channel, report.summary, now);
+    if (!admitted) return false;
+    await deliverErrorWebhook(destination, { ...report, channel, withheld, node: os.hostname(), version: appVersion(), reportedAt: new Date(now).toISOString() });
+    return true;
+  } catch {
+    console.warn(`Could not forward a ${channel} error to the configured webhook`);
+    return false;
+  }
+}
+
 async function reportNtfy(channel: ErrorChannel, destination: { serviceId: string; topic: string }, report: ErrorReport, now: number): Promise<boolean> {
   try {
-    const { admitted, withheld } = admit(ntfyThrottles, channel, report.summary, now);
+    const { admitted, withheld } = admit("ntfy", channel, report.summary, now);
     if (!admitted) return false;
     const lines = [
       report.summary,
