@@ -29,10 +29,17 @@ export const CLOSEOUT_RULE_QUESTION: SystemOneQuestion = {
     skip: "Unsupported inference, secret, one-off detail, project-specific detail marked general, or not a useful reusable lesson.",
   },
 };
-/** The generation model's answer. Extra keys it adds (such as a "scope_note") are dropped, not fatal. */
+const ruleSchema = z.object({ scope: z.enum(["project", "general"]), subject: z.string().refine(isKnowledgeSlug), text: z.string().trim().min(1).max(320), evidence: z.string().trim().min(1).max(240) });
+/** The generation model's answer. Extra keys it adds (such as a "scope_note") are dropped, not fatal. So is a
+    proposed rule that breaks its limits (such as text over 320 characters): it is not learned, the others still are. */
 export const draftSchema = z.object({
   description: z.string().trim().min(1).max(1000),
-  rules: z.array(z.object({ scope: z.enum(["project", "general"]), subject: z.string().refine(isKnowledgeSlug), text: z.string().trim().min(1).max(320), evidence: z.string().trim().min(1).max(240) })).max(3),
+  rules: z.array(z.unknown()).max(3).transform((rules) => rules.flatMap((rule) => {
+    const parsed = ruleSchema.safeParse(rule);
+    if (parsed.success) return [parsed.data];
+    console.warn(`Conversation feedback skipped a proposed rule: ${parsed.error.issues.map((issue) => `${issue.path.join(".")} ${issue.message}`).join("; ")}`);
+    return [];
+  })),
 });
 
 /** A closeout that cannot succeed until Settings change (no decision model, no key for it), or

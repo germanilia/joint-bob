@@ -59,7 +59,13 @@ test("a lesson draft with keys the model added is accepted without them", () => 
   const rule = { scope: "general", subject: "verification", text: "Run the tests before reporting done.", evidence: "Reported done with failing tests" };
   const draft = draftSchema.parse({ description: "Tests failed.", note: "extra", rules: [{ ...rule, scope_note: "holds in any project" }] });
   assert.deepEqual(draft, { description: "Tests failed.", rules: [rule] });
-  assert.throws(() => draftSchema.parse({ description: "Tests failed.", rules: [{ ...rule, scope: "team" }] }));
+});
+
+test("a proposed rule that breaks its limits is skipped, and the other rules are still learned", () => {
+  const rule = { scope: "project", subject: "verification", text: "Run the tests before reporting done.", evidence: "Reported done with failing tests" };
+  const draft = draftSchema.parse({ description: "Tests failed.", rules: [{ ...rule, text: "x".repeat(321) }, { ...rule, scope: "team" }, rule] });
+  assert.deepEqual(draft, { description: "Tests failed.", rules: [rule] });
+  assert.throws(() => draftSchema.parse({ description: "", rules: [rule] }));
 });
 
 test("inactivity uses message timestamps, strictly more than four days, and excludes busy and done", () => {
