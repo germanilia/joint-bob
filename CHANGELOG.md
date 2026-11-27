@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.10 — 2026-11-27
+
+- **Error reports:** A peer that loses its relay connection while downloading a conversation transcript no longer sends an error report. The download resumes on the next sync, and the server logs a warning instead.
+
 ## 2.344.9 — 2026-11-27
 
 - **Connection drops:** A lost connection now shows a single notice instead of an error for every failed request, and sends no error report. The notice clears on reconnect, or stays until dismissed if a change may not have been saved.

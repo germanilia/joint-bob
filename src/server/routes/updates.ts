@@ -4,6 +4,7 @@ import { ProjectFolderError } from "../../project-runtime.js";
 import { z } from "zod";
 import { appVersion, readChangelog } from "../../changelog.js";
 import { ProjectDirectoryImportError } from "../../project-directory-import.js";
+import { RelayChannelError } from "../../relay/stream.js";
 import { getClusterNode } from "../../cluster.js";
 import { clusterV2Database } from "../../cluster-v2-store.js";
 import { isActiveUpdateTwin } from "../../twin-updates.js";
@@ -157,7 +158,10 @@ app.use((error: unknown, request: Request, response: Response, _next: NextFuncti
     return;
   }
   if (response.headersSent) {
-    console.error("%s %s failed after its response started", request.method, request.path, error);
+    // The requester's relay channel closed mid-response: the relay form of a client disconnect,
+    // which Express already ignores on TCP sockets. A cut-off transcript download resumes on the next pull.
+    if (error instanceof RelayChannelError) console.warn(`${request.method} ${request.path} stopped: the requester's relay connection closed (${error.message})`);
+    else console.error("%s %s failed after its response started", request.method, request.path, error);
     response.end();
     return;
   }
