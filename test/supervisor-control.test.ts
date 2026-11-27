@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -94,6 +95,28 @@ test("task CLI launches once, survives CLI exit, and supports status/output/stop
     await waitFor(() => run(["output", id]).stdout.includes("fixture-output"), "output unavailable");
     assert.equal(run(["stop", id]).status, 0);
   } finally { await stop(f.child); await rm(f.root, { recursive: true, force: true }); }
+});
+
+test("a timed-out supervisor request logs a warning; a refused socket logs an error", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "jbc-"));
+  const socketPath = path.join(root, "silent.sock");
+  const silent = http.createServer(() => {});
+  await new Promise<void>(resolve => silent.listen(socketPath, resolve));
+  const warn = t.mock.method(console, "warn", () => {});
+  const error = t.mock.method(console, "error", () => {});
+  try {
+    const client = await import("../scripts/supervisor-client.mjs");
+    await assert.rejects(client.requestSupervisor(socketPath, "x", { action: "status" }, 50), /Supervisor request timed out/);
+    assert.equal(error.mock.callCount(), 0);
+    assert.match(String(warn.mock.calls[0]!.arguments[0]), /status failed after \d+ms on a fresh socket: Supervisor request timed out/);
+    await assert.rejects(client.requestSupervisor(path.join(root, "missing.sock"), "x", { action: "status" }, 50), /Supervisor request failed/);
+    assert.equal(error.mock.callCount(), 1);
+    assert.equal(warn.mock.callCount(), 1);
+  } finally {
+    silent.closeAllConnections();
+    await new Promise(resolve => silent.close(resolve));
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("unavailable discovery and CLI validation do not create supervisor state", async () => {

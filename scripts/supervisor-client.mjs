@@ -86,10 +86,14 @@ export function requestSupervisor(socketPath, token, body, timeoutMs = 15000) {
         resolve(value.result);
       });
     });
+    let timedOut = false;
     request.on("socket", () => { reusedSocket = request.reusedSocket === true; });
-    request.setTimeout(timeoutMs, () => request.destroy(new Error("Supervisor request timed out")));
+    request.setTimeout(timeoutMs, () => { timedOut = true; request.destroy(new Error("Supervisor request timed out")); });
     request.on("error", error => {
-      console.error(`[supervisor-client] ${action} failed after ${Date.now() - startedAt}ms on a ${reusedSocket ? "reused" : "fresh"} socket: ${error.message}`);
+      // A timeout is a warning for the same reason as a slow response: a blocked event loop here
+      // fires the timer before the supervisor's reply is read. A refused or broken socket is an error.
+      const log = timedOut ? console.warn : console.error;
+      log(`[supervisor-client] ${action} failed after ${Date.now() - startedAt}ms on a ${reusedSocket ? "reused" : "fresh"} socket: ${error.message}`);
       reject(new Error(`Supervisor request failed: ${error.message}`));
     });
     request.end(JSON.stringify(body));
