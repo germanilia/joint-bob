@@ -43,11 +43,11 @@ document.querySelector("#focusMore").append(controlCenterTile);
 const actionButtons = Object.fromEntries([
   "focusMarkDone", "focusAddSecret", "focusAutoRespond", "focusNotify", "focusActivity", "focusFiles", "focusGit", "focusTasks", "focusTools",
   "focusNewConversation", "focusNewNote", "focusRecents", "focusRunning", "focusReviews", "focusProjects", "focusConversations", "focusControl",
-  "focusCosts", "focusSettings",
+  "focusAutomations", "focusCosts", "focusSettings",
 ].map(id => [id, document.getElementById(id)]));
 // Buttons that work in every view sit in the same place and order everywhere ("More"); a conversation adds its details
 // above them. Tools is no longer a submenu: the conversation's tools are listed in the sheet (renderTools).
-const PLACES = ["focusNewConversation", "focusNewNote", "focusConversations", "focusRecents", "focusRunning", "focusReviews", "focusProjects", "focusControl", "focusCosts", "focusSettings"];
+const PLACES = ["focusNewConversation", "focusNewNote", "focusConversations", "focusRecents", "focusRunning", "focusReviews", "focusProjects", "focusControl", "focusAutomations", "focusCosts", "focusSettings"];
 const chatPlacement = {
   "#focusPanels": ["focusActivity", "focusFiles", "focusGit", "focusTasks"],
   "#focusSwitches": ["focusAutoRespond", "focusNotify"],
@@ -379,6 +379,10 @@ export function initializeFocusUi({ openSettings, startConversation, createNote,
     setMobileView("projects");
   };
   controlCenterTile.onclick = () => { showMenu(false); setMobileView("control"); };
+  actionButtons.focusAutomations.onclick = () => {
+    showMenu(false);
+    document.getElementById("workspaceAutomationsButton").click();
+  };
   document.querySelector("#focusConversations").onclick = () => setMobileView("sessions");
   document.querySelector("#focusClose").onclick = () => showMenu(false);
   chatHost.addEventListener("click", event => { if (!mobileFocusViewport.matches && event.target.closest("button:not(:disabled)")) showMenu(false); });
@@ -406,7 +410,7 @@ function decorateControls() {
   for (const [id, icon] of Object.entries({
     focusBack: "back", focusClose: "close",
     focusNewConversation: "chat", focusNewNote: "pencil", focusRecents: "clock", focusReviews: "archive", focusRunning: "play",
-    focusProjects: "folder", focusConversations: "chat", focusSettings: "sliders", focusAddSecret: "key",
+    focusProjects: "folder", focusConversations: "chat", focusAutomations: "clock", focusSettings: "sliders", focusAddSecret: "key",
   })) {
     const svg = menuIcon(icon);
     svg.classList.add("focus-action-icon");

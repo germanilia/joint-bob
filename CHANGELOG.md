@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.7 — 2026-11-27
+
+- **Mobile:** Open Automations from the ⋯ menu without switching to desktop view.
+
 ## 2.344.6 — 2026-11-27
 
 - **Model routing:** Running, shipping and release tasks on Pi now use GPT-6.1 Terra with high instead of medium thinking (4 of 17 judged turns stopped short, mostly at a failing test).

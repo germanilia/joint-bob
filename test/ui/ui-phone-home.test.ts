@@ -124,6 +124,22 @@ test("New offers the desktop's New menu, and search opens the workspace search",
   await page.locator("#spotlightDialog[open]").waitFor({ state: "detached" });
 });
 
+test("the phone menu opens Automations and its back button returns to Bob", async () => {
+  await page.getByTestId("phone-home").waitFor();
+  await page.getByTestId("focus-controls-button").tap();
+  await page.getByTestId("focus-controls-button").and(page.locator('[aria-expanded="true"]')).waitFor();
+  const automations = page.getByTestId("focus-automations");
+  assert.equal(await automations.isVisible(), true, "Automations is available in the phone menu");
+  await automations.tap();
+  await page.getByTestId("automations-list").waitFor();
+  assert.equal(await page.getByTestId("control-phone-view-title").textContent(), "Automations");
+  await page.getByTestId("control-phone-view-back").tap();
+  await page.getByTestId("automations-list").waitFor({ state: "hidden" });
+  assert.equal(await page.getByTestId("control-chat-input").isVisible(), true);
+  await page.getByTestId("phone-tab-inbox").tap();
+  await page.getByTestId("phone-home").waitFor();
+});
+
 test("a conversation opened on Home goes back to Home, and its details sheet holds every action", async () => {
   // Every view the page passes through is recorded: a project's own list must never flash by on the way.
   await page.evaluate(() => {
