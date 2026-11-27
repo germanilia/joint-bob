@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.9 — 2026-11-27
+
+- **Connection drops:** A lost connection now shows a single notice instead of an error for every failed request, and sends no error report. The notice clears on reconnect, or stays until dismissed if a change may not have been saved.
+
 ## 2.344.8 — 2026-11-27
 
 - **Connection drops:** A page load or refresh that gets no response is retried quietly for about 12 seconds before an error is shown or reported.

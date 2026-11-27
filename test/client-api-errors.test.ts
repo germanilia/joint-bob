@@ -13,7 +13,7 @@ function client(fetch: (...args: any[]) => any, duringWait?: () => void) {
   window.addEventListener("joint-bob-client-error", (event) => alerts.push((event as CustomEvent).detail));
   let signedOut = false;
   const requests = runInNewContext(`${source}\n({ api, apiBlob, apiLines })`, {
-    fetch, Error, window, CustomEvent, clearTimeout,
+    fetch, Error, window, CustomEvent, Event, clearTimeout,
     setTimeout: (done: () => void, ms: number) => {
       waits.push(ms);
       if (!duringWait) return setTimeout(done, 0);

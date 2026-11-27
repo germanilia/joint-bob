@@ -6,6 +6,9 @@ import { renderSessions } from "./session-list.js";
 import { recordFailure } from "./error-report.js";
 import { state } from "./state.js";
 
+export const NO_RESPONSE = "No response was received. Check your connection.";
+export const UNCERTAIN_WRITE = "Check whether the change took effect before trying again.";
+
 function headers() {
   return state.csrfToken ? { "X-CSRF-Token": state.csrfToken, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 }
@@ -22,10 +25,10 @@ function requestFailure(error, path, options, status) {
   if (cancelled) reason = "The request was cancelled.";
   else if (timedOut) reason = "The request timed out.";
   else if (interrupted) reason = "The request was interrupted before completion. No reason was provided.";
-  else if (status === 0 && cause.name === "TypeError") reason = "No response was received. Check your connection.";
+  else if (status === 0 && cause.name === "TypeError") reason = NO_RESPONSE;
   else if (cause.name === "SyntaxError") reason = "The server returned an unreadable response.";
   const uncertainWrite = !["GET", "HEAD"].includes(method) && (interrupted || timedOut || status < 400);
-  const message = `Could not complete ${method} ${requestPath}: ${reason}${uncertainWrite ? " Check whether the change took effect before trying again." : ""}`;
+  const message = `Could not complete ${method} ${requestPath}: ${reason}${uncertainWrite ? ` ${UNCERTAIN_WRITE}` : ""}`;
   const failure = Object.assign(new Error(message, { cause }), {
     name: cause.name, method, path: requestPath, status, details: cause.details, cancelled,
   });
@@ -64,6 +67,7 @@ async function send(path, options, consume) {
   try {
     const response = await fetchWithRetry(path, { ...options, cache: "no-store", headers: { ...headers(), ...(options.headers || {}) } });
     status = response.status;
+    window.dispatchEvent(new Event("joint-bob-server-answered"));
     if (!response.ok) {
       if (status === 401 && !["/api/auth/status", "/api/auth/login", "/api/auth/login/mfa"].includes(path)) showSignedOut();
       const body = await response.json().catch((error) => {

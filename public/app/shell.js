@@ -1,4 +1,4 @@
-import { api, savePreferencesInBackground } from "./api.js";
+import { api, NO_RESPONSE, savePreferencesInBackground, UNCERTAIN_WRITE } from "./api.js";
 import { sendSocket } from "./chat-controls.js";
 import { elements } from "./elements.js";
 import { copyErrorReport, downloadErrorReport } from "./error-report.js";
@@ -152,8 +152,28 @@ export function toast(message, duration = 3200, severity = "info", action) {
   return node;
 }
 
-/** Every error carries its report: the failed calls, their answers and what the page was showing, to send to whoever helps. */
+// A lost connection fails every request at once, so it gets one notice and no error report.
+const CONNECTION_NOTICE = "No connection to Joint Bob. Check that any recent change was saved.";
+let connectionNotice = null;
+let changeAtRisk = false;
+
+function connectionLost(change) {
+  changeAtRisk ||= change;
+  // A dismissed notice stays dismissed until the server answers, unless another change may be lost.
+  if (!connectionNotice || (change && !connectionNotice.isConnected)) connectionNotice = toast(CONNECTION_NOTICE, 2_147_483_647, "warning");
+  return connectionNotice;
+}
+
+// Reconnecting clears the notice. One that covers a possibly unsaved change waits to be dismissed.
+window.addEventListener("joint-bob-server-answered", () => {
+  if (connectionNotice && !changeAtRisk) dismissToast(connectionNotice);
+  connectionNotice = null;
+  changeAtRisk = false;
+});
+
+/** Every other error carries its report: the failed calls, their answers and what the page was showing, to send to whoever helps. */
 toast.error = (message, { kind = "toast", detail = message } = {}) => {
+  if (message.includes(NO_RESPONSE)) return connectionLost(message.includes(UNCERTAIN_WRITE));
   const node = toast(message, 8000, "error");
   if (node.querySelector(".toast-report")) return node;
   const report = document.createElement("span");

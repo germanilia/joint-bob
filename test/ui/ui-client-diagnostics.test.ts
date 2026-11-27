@@ -200,3 +200,30 @@ test("Copy logs puts the client logs on the clipboard and confirms it", { timeou
   await page.locator(".toast").filter({ hasText: "Client logs copied" }).waitFor();
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /copy-logs-diagnostic/);
 });
+
+test("a lost connection shows one notice, sends no error report and clears on reconnect", { timeout: 120_000 }, async (t) => {
+  const { page, environment, node } = await nativeUiFixture(t);
+  await signIn(page, node.url, environment.username, environment.password);
+  const reports: string[] = [];
+  page.on("request", (request) => { if (request.url().endsWith("/api/client-errors")) reports.push(request.postData() ?? ""); });
+  await page.route("**/api/**lost=*", (route) => route.abort("failed"));
+  const fail = (method: string) => page.evaluate(`(async () => {
+    const { api } = await import("/app/api.js");
+    const { toast } = await import("/app/shell.js");
+    await Promise.all(["projects", "preferences"].map((name) =>
+      api("/api/" + name + "?lost=1", { method: "${method}" }).catch((error) => toast.error("Failed to load " + name + ": " + error.message))));
+  })()`);
+  const notice = page.locator(".toast").filter({ hasText: "No connection to Joint Bob" });
+  const reconnect = () => page.evaluate(`import("/app/api.js").then(({ api }) => api("/api/preferences"))`);
+
+  await fail("GET");
+  assert.equal(await notice.count(), 1);
+  assert.equal(await page.getByRole("alert").count(), 0);
+  await reconnect();
+  await notice.waitFor({ state: "detached" });
+
+  await fail("PUT");
+  await reconnect();
+  assert.equal(await notice.count(), 1, "a change that may be lost stays visible after reconnecting");
+  assert.deepEqual(reports.filter((report) => report.includes("lost") || report.includes("No response")), []);
+});
