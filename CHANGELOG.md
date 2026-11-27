@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.7 — 2026-11-27
+
+- **Connection:** A page open while Joint Bob restarts for an update no longer shows errors such as "Could not complete GET /api/cluster/inventory: This node is starting" or "Could not complete GET /api/health: Service Unavailable", and no longer sends an error report for each. While a machine is starting, Joint Bob answers some reads with "not ready yet, try again shortly"; the page now retries those and then folds them into the single connection notice, as it already did for a read that gets no answer. Writes, and Joint Bob's other errors, are unchanged.
+
 ## 2.346.6 — 2026-11-27
 
 - **Auto respond:** A failed recovery connection no longer invalidates a decision running on another connection. A responder that can't start within two minutes stops and shows why instead of leaving the chat stuck on "checking the work".
