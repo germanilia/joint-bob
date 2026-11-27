@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.6 — 2026-11-27
+
+- **Model routing:** Running, shipping and release tasks on Pi now use GPT-6.1 Terra with high instead of medium thinking (4 of 17 judged turns stopped short, mostly at a failing test).
+
 ## 2.344.5 — 2026-11-27
 
 - **Routing:** Bob auto picks a model again when its first choice cannot run. A conversation on a subscription pool gave up if the first model was unavailable, and kept whatever model it already had; it now tries the next one. For Pi, GLM 5.3 and GLM 5.3 Flash were also asked for a "medium" reasoning level they do not offer on levels 1 and 4, so they were always refused; they now use "high".
