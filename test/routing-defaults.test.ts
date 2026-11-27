@@ -17,6 +17,13 @@ test("Pi routes only to its subscriptions: Codex and Z.ai", () => {
   assert.deepEqual([...providers].sort(), ["openai-codex", "zai"]);
 });
 
+test("GLM defaults only ask for the reasoning levels GLM takes", () => {
+  // Pi refuses any other level, which drops the model from routing.
+  for (const model of readRoutingDefaults().models.pi.filter((item) => item.provider === "zai")) {
+    for (const [level, entry] of Object.entries(model.levels)) assert.match(entry.thinkingLevel, /^(low|high|max)$/, `${model.modelId} level ${level}`);
+  }
+});
+
 test("defaultRoutingPolicy maps each level to its scored candidates, first as mapping, rest as fallbacks", () => {
   const defaults = readRoutingDefaults();
   const policy = defaultRoutingPolicy();

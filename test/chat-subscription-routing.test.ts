@@ -313,6 +313,30 @@ test("a routed model runs on the first pool member and the default runs after sw
   assert.equal(saved.modelId, "opus", "saved queue settings reflect the model that completed the turn");
 });
 
+test("a pool turn falls back to the next routed model when the first cannot run here", async () => {
+  const f = fixture("pool");
+  let saved: any = null;
+  const tried: string[] = [];
+  const policy = { id: "config", revision: 1, policy: { classifierId: "typesafe", confidenceThreshold: 0.5, contextMessages: 10,
+    harnesses: { claude: { levels: { "7": { provider: "claude", modelId: "missing-model", thinkingLevel: "medium", description: "Hard work",
+      fallbacks: [{ provider: "claude", modelId: "fallback-model", thinkingLevel: "high" }] } } } } } };
+  Object.assign(f.dependencies, {
+    activeRoutingConfig: () => policy, bumpRoutingPromptCount: () => 1, routingEvalDue: () => true, recordRoutingEval: () => {},
+    readRoutingState: () => ({ mode: "auto", lastEvalOrdinal: null, configId: "config", configRevision: 1 }),
+    classifyForRouting: async () => ({ classification: { level: 7, score: 7, confidence: 0.9 }, source: "local" }),
+    systemAiSettings: () => ({ decision: { model: "typesafe" }, routing: { enabled: true, shareWithRelay: false } }), DEFAULT_ROUTING_CONFIG_ID: "default-config",
+    automaticRoutingModelAllowed: () => true, routingCandidateListed: () => true, getHarness: () => ({ configuration: {} }),
+    readQueueSettings: () => saved, recordQueueSettings: (_key: string, value: unknown) => { saved = value; },
+    getHarnessRuntime: async () => ({ validateSettings: async (value: any) => {
+      tried.push(value.modelId);
+      if (value.modelId === "missing-model") throw new Error("Model not found");
+    } }),
+  });
+  await f.exports.dispatch(f.connection, f.queued);
+  assert.deepEqual(tried, ["missing-model", "fallback-model"]);
+  assert.ok(f.events.some(event => event.type === "promptRouted" && event.mapped === true && event.modelId === "fallback-model" && event.candidateIndex === 1));
+});
+
 test("an Antigravity turn in a cluster with only Claude/Codex pool subscriptions falls back to the local Antigravity subscription", async () => {
   const f = fixture("relay-pool");
   f.connection.engine = "antigravity";

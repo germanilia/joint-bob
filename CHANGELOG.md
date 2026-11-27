@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.5 — 2026-11-27
+
+- **Routing:** Bob auto picks a model again when its first choice cannot run. A conversation on a subscription pool gave up if the first model was unavailable, and kept whatever model it already had; it now tries the next one. For Pi, GLM 5.3 and GLM 5.3 Flash were also asked for a "medium" reasoning level they do not offer on levels 1 and 4, so they were always refused; they now use "high".
+
 ## 2.344.4 — 2026-11-26
 
 - **Performance:** Checking whether a project's worktree folders changed costs about half as much. After 2.343.10 that check was the largest single cost left on a server with many worktrees; it now looks at the folders in one go (about 3 ms for 165 worktrees) instead of as 500 separate requests.

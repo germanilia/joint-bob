@@ -288,7 +288,7 @@
         "levels": {
           "1": {
             "score": 65,
-            "thinkingLevel": "medium"
+            "thinkingLevel": "high"
           },
           "2": {
             "score": 57,
@@ -296,7 +296,7 @@
           },
           "4": {
             "score": 66,
-            "thinkingLevel": "medium"
+            "thinkingLevel": "high"
           },
           "6": {
             "score": 55,
@@ -311,7 +311,7 @@
             "thinkingLevel": "high"
           }
         },
-        "evidence": "Terminal-Bench 4.0 37.4% at $1.22/test [s1]; Terminal-Bench 2.1 84.3 [s8]; price [s7]."
+        "evidence": "Terminal-Bench 4.0 37.4% at $1.22/test [s1]; Terminal-Bench 2.1 84.3 [s8]; price [s7]. Takes only low, high or max reasoning, so levels 1 and 4 use high."
       },
       {
         "provider": "zai",
@@ -324,7 +324,7 @@
         "levels": {
           "1": {
             "score": 72,
-            "thinkingLevel": "medium"
+            "thinkingLevel": "high"
           },
           "2": {
             "score": 60,
@@ -332,7 +332,7 @@
           },
           "4": {
             "score": 72,
-            "thinkingLevel": "medium"
+            "thinkingLevel": "high"
           },
           "6": {
             "score": 68,
@@ -347,7 +347,7 @@
             "thinkingLevel": "high"
           }
         },
-        "evidence": "Terminal-Bench 4.0 38.9% [s1]; SWE-bench Verified 95.4% [s3]; SWE-bench Pro v2 HARD 84.3% [s10]; DeepSWE 66.9 (vendor) [s8]."
+        "evidence": "Terminal-Bench 4.0 38.9% [s1]; SWE-bench Verified 95.4% [s3]; SWE-bench Pro v2 HARD 84.3% [s10]; DeepSWE 66.9 (vendor) [s8]. Takes only low, high or max reasoning, so levels 1 and 4 use high."
       }
     ],
     "claude": [
