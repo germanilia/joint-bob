@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.345.7 — 2026-11-27
+
+- **Conversations:** Deleting a conversation that another machine runs, while that machine is not answering, now fails with "Conversation owner is unavailable; delete was not confirmed" instead of "fetch failed", and no longer sends an error report.
+- **Error reports:** A background-task supervisor check that timed out only because Joint Bob itself was busy (for example just after a restart) is logged as a warning instead of being sent as an error report. A supervisor that refuses or drops the connection is still reported.
+
 ## 2.345.6 — 2026-11-27
 
 - **Performance:** Opening a conversation that is not in its project's list (for example one whose transcript is on another machine) no longer searches every transcript folder once per open. Opens arriving together share one search, and its result serves the opens of the next five seconds. On a busy machine each search took from 18 seconds to over two minutes, and pages retrying made it worse.
