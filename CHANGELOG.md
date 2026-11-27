@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.344.12 — 2026-11-27
+
+- **Worktrees:** Merging a worktree into a local project no longer stops with "Installed files differ from the verified candidate" when the task adds a file. The check after installing went through the project's Git index, which has no entry yet for a new file, so it read every added file as missing. The merge then stopped halfway and left the project's Git index locked.
+
 ## 2.344.11 — 2026-11-27
 
 - **Performance:** Opening a conversation list no longer rewrites its project's "last used" time on every request. Each rewrite re-sent the project's details to every other machine and discarded the server's cached lookups. The project already first in the list is left alone, and another moves up at most once a minute.
