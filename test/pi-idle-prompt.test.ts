@@ -140,3 +140,22 @@ test("generic task dispatch uses HarnessSession.prompt and Pi keeps idle schedul
   assert.match(source, /\.session\.prompt\(/);
   assert.match(PiSession.prototype.prompt.toString(), /service\.promptIdlePiSession\(this\.handle/);
 });
+
+test("a failed Pi turn keeps the provider's HTTP status, so a pool hands an exhausted account to its next member", async () => {
+  const { classifyPoolAttemptFailure } = await import("../src/provider-profiles/pool-execution.js");
+  const failWith = async (errorMessage: string) => {
+    const fake = fakePiSession(false);
+    const handle = fake.handle as unknown as { session: { messages: unknown[]; prompt: (text: string) => Promise<void> } };
+    handle.session.prompt = async () => { handle.session.messages.push({ role: "assistant", stopReason: "error", errorMessage }); };
+    const session = new PiSession({ cwd: "/tmp", projectId: "project", sessionId: "fake-pi-session" }, fake.handle as never);
+    try {
+      return await session.prompt({ text: "hello" }).then(() => assert.fail("the failed turn resolved"), (error: unknown) => error as Error);
+    } finally { session.dispose(); }
+  };
+  const balance = await failWith("429: {\"code\":\"1113\",\"message\":\"Insufficient balance or no resource package. Please recharge.\"}");
+  assert.match(balance.message, /Insufficient balance/);
+  assert.equal(classifyPoolAttemptFailure(balance, false)?.reason, "quota");
+  assert.equal(classifyPoolAttemptFailure(await failWith("OpenAI (401): invalid api key"), false)?.reason, "auth");
+  assert.equal(classifyPoolAttemptFailure(await failWith("400: model does not support images"), false), undefined);
+  assert.equal(classifyPoolAttemptFailure(await failWith("Pi turn error at 12:30: something broke"), false), undefined);
+});
