@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.346.1 — 2026-11-27
+
+- **Assistant Teams Live Browser Login:** Fixed the browser  command payload (uid=1000(ilia) gid=1000(ilia) groups=1000(ilia),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),101(lxd),988(docker) instead of ) so the release build compiles cleanly and opens inline browser logins in interactive control mode.
 ## 2.346.0 — 2026-11-27
 
 - **Assistant Teams setup wizard:** Step 2 now shows a live activity card with elapsed timer, live tool-call trace steps, and an Inspect live button; renders Chief replies and Team Activity answers as formatted Markdown; orders messages chronologically with auto-scroll; and fixes checkbox wrapping and nested scroll clipping.
