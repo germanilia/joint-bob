@@ -308,9 +308,9 @@ export async function piProfileModelKeys(profile: import("./provider-profiles/st
   return new Set((await availablePiProfileModels(profile)).map(({ provider, id }) => `${provider}/${id}`));
 }
 
-async function availablePiProfileModels(profile: import("./provider-profiles/store.js").ProviderProfile) {
+async function availablePiProfileModels(profile: import("./provider-profiles/store.js").ProviderProfile, provider?: string) {
   const { profileModelRuntime } = await import("./provider-profiles/service.js");
-  const models = [...await (await profileModelRuntime(profile)).getAvailable()];
+  const models = [...await (await profileModelRuntime(profile)).getAvailable(provider)];
   const signedInProviders = new Set(models.map((model) => model.provider));
   for (const { provider, model } of SUPPLEMENTAL_MODELS) {
     if (!signedInProviders.has(provider)) continue;
@@ -320,9 +320,11 @@ async function availablePiProfileModels(profile: import("./provider-profiles/sto
   return models;
 }
 
-async function availableModelsWithProfiles() {
+async function availableModelsWithProfiles(target?: { provider: string; modelId: string }) {
   await ensurePiProviderCatalog();
-  const available = [...await modelRuntime.getAvailable()];
+  const available = [...await modelRuntime.getAvailable(target?.provider)];
+  const found = () => target && available.some((model) => model.provider === target.provider && model.id === target.modelId);
+  if (found()) return available;
   const { actingAccount } = await import("./account-context.js");
   const { adminAccountId } = await import("./ownership.js");
   const owner = actingAccount()?.accountId ?? adminAccountId();
@@ -332,17 +334,20 @@ async function availableModelsWithProfiles() {
   const profiles = listProviderProfiles(owner);
   // A signed-in subscription profile backs Pi models of its provider even when the node itself has no login.
   for (const [profileProvider, piProvider] of [["openai-codex", "openai-codex"], ["claude", "anthropic"]] as const) {
-    if (available.some((model) => model.provider === piProvider)) continue;
+    if (target && target.provider !== piProvider || available.some((model) => model.provider === piProvider)) continue;
     if (profiles.some((profile) => profile.provider === profileProvider && readStoredCredential(piProvider, openAIAuthPath(profile))?.type === "oauth")) {
       available.push(...modelRuntime.getModels(piProvider));
     }
   }
+  // A specific model that is already available must not wait for other Pi profiles to discover their catalogs.
+  if (found()) return available;
   const seen = new Set(available.map((model) => `${model.provider}/${model.id}`));
   for (const profile of profiles.filter((item) => item.provider === "pi")) {
-    for (const model of await availablePiProfileModels(profile)) {
+    for (const model of await availablePiProfileModels(profile, target?.provider)) {
       const key = `${model.provider}/${model.id}`;
       if (!seen.has(key)) { seen.add(key); available.push(model); }
     }
+    if (found()) break;
   }
   return available;
 }
@@ -368,7 +373,7 @@ export async function modelIsRunnable(provider: string, modelId: string): Promis
 }
 
 export async function runnablePiModel(provider: string, modelId: string) {
-  const model = (await availableModelsWithProfiles()).find((model) => model.provider === provider && model.id === modelId);
+  const model = (await availableModelsWithProfiles({ provider, modelId })).find((model) => model.provider === provider && model.id === modelId);
   return model && { ...summarizeModel(model)!, thinkingLevels: thinkingLevels(model) };
 }
 

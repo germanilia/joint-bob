@@ -340,7 +340,6 @@ const runtime: HarnessRuntime = {
     if (!model.thinkingLevels.includes(settings.reasoning)) {
       throw new Error("Pi reasoning level is not supported");
     }
-    await service.reloadPiAuth();
   },
 
   async externalRunning() {

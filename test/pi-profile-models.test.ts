@@ -13,7 +13,7 @@ async function signIn(authPath: string, provider: string): Promise<void> {
   await writeFile(authPath, JSON.stringify({ [provider]: { type: "oauth", access: "fixture-access", refresh: "fixture-refresh", expires: Date.now() + 3_600_000 } }), { mode: 0o600 });
 }
 
-test("signed-in Claude and ChatGPT profiles both offer their Pi models when the node has no login", async () => {
+test("signed-in profiles offer their Pi models, and validating one model does not wait for unrelated catalogs", async context => {
   const { runAsAccount } = await import("../src/account-context.js");
   const { createProviderProfile } = await import("../src/provider-profiles/store.js");
   const { openAIAuthPath } = await import("../src/provider-profiles/service.js");
@@ -41,9 +41,24 @@ test("signed-in Claude and ChatGPT profiles both offer their Pi models when the 
   const catalog = await profileModelRuntime(pi);
   assert.ok((await offered("zai")).length > 0, `a Pi profile offers z.ai models with its API key; known=${catalog.getModels("zai").map((model) => model.id)}, available=${(await catalog.getAvailable("zai")).map((model) => model.id)}`);
   const glm = (await offered("zai")).find((model) => model.id === "glm-5.4");
-  assert.equal(glm?.label, "GLM-5.4", "a signed-in Z.ai profile offers GLM-5.4 in the picker");
+  assert.ok(glm, "a signed-in Z.ai profile offers GLM-5.4 in the picker");
+  assert.equal(glm.label, "GLM-5.4");
   assert.equal(await runAsAccount(account, () => modelIsRunnable("zai", "glm-5.4")), true);
   assert.ok((await offered("openai")).length > 0, "the same Pi profile also offers OpenAI API-key models");
   const all = await runAsAccount(account, listAvailableModels);
   assert.equal(new Set(all.map((model) => `${model.provider}/${model.id}`)).size, all.length, "model catalog has no duplicates");
+
+  const { getHarnessRuntime } = await import("../src/harnesses.js");
+  const { ModelRuntime } = await import("../src/pi-sdk.js");
+  const runtime = await getHarnessRuntime("pi");
+  const nativeAvailable = ModelRuntime.prototype.getAvailable;
+  context.mock.method(ModelRuntime.prototype, "getAvailable", function (this: InstanceType<typeof ModelRuntime>, provider?: string, options?: Parameters<typeof nativeAvailable>[1]) {
+    assert.ok(provider, "a single-model validation must not wait for every provider");
+    assert.ok(this !== catalog || provider !== "openai-codex", "a model already offered by a signed-in Codex profile does not need the unrelated Pi profile");
+    return nativeAvailable.call(this, provider, options);
+  });
+  const codex = all.find((model) => model.provider === "openai-codex")!;
+  await runAsAccount(account, () => runtime.validateSettings({ provider: codex.provider, modelId: codex.id, reasoning: codex.thinkingLevels[0] }));
+  await runAsAccount(account, () => runtime.validateSettings({ provider: glm.provider, modelId: glm.id, reasoning: glm.thinkingLevels[0] }));
+  await assert.rejects(runAsAccount(account, () => runtime.validateSettings({ provider: "zai", modelId: "not-a-model", reasoning: "off" })), /Model not found/);
 });
