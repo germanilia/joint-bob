@@ -972,10 +972,18 @@ export async function removeProject(projectId: string): Promise<void> {
   for (const id of ownedAccountIds) await fs.rm(path.join(resolveDataDirectory(), "secret-files", id), { recursive: true, force: true });
 }
 
+export const PROJECT_TOUCH_EVERY_MS = 60_000;
 export async function touchProject(projectId: string): Promise<void> {
   const db = await projectDatabase();
   const canonicalId = resolveProjectId(db, projectId);
-  if (canonicalId) db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), canonicalId);
+  if (!canonicalId) return;
+  // The time only orders the project list. Every conversation list request used to write it
+  // (25 a minute on the homeserver, 2026-11-27), and each write changed the project's shared
+  // details, so they were signed and sent to every peer again and every kept lookup was dropped.
+  // The project already first in the list stays first; another moves up at most once a minute.
+  const row = db.prepare("SELECT updated_at updatedAt, (SELECT MAX(updated_at) FROM projects) newest FROM projects WHERE id = ?").get(canonicalId) as { updatedAt: string; newest: string } | undefined;
+  if (!row || row.updatedAt === row.newest || Date.now() - Date.parse(row.updatedAt) < PROJECT_TOUCH_EVERY_MS) return;
+  db.prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), canonicalId);
 }
 
 export function workspaceIdFromLabel(label: string): string {

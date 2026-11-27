@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { ProjectRecord, SessionSummary } from "../src/types.js";
 import { scheduleUsageIngest, USAGE_RESCHEDULE_MS, usageIngestIdle, withFreshUsage } from "../src/usage-ingest.js";
-import { clearUsageTotalsCache, conversationUsage, usageDatabase, upsertUsageInventory } from "../src/usage-ledger.js";
+import { clearUsageTotalsCache, conversationUsage, forgetUsageInventoryReports, usageDatabase, upsertUsageInventory } from "../src/usage-ledger.js";
 
 // 2026-11-23: while the Mac catalogued 860 conversations of a shared project, every new catalogue
 // row dropped the cached totals of every conversation in that project (about 100 recomputed a
@@ -50,7 +50,8 @@ test("an unchanged listing does not re-walk a project's transcripts until its in
     return { id, path: file, harnessId: "pi", agentId: "pi", agentLabel: "Pi", title: id, createdAt: project.createdAt };
   };
   const catalogued = () => (db.prepare("SELECT session_id id FROM usage_inventory WHERE project_id=? ORDER BY session_id").all(project.id) as Array<{ id: string }>).map((row) => row.id);
-  const forget = () => db.exec(`DELETE FROM usage_inventory WHERE project_id='${project.id}'`);
+  // The rows are removed behind the ledger's back to see whether a walk writes them again, so its memory of them goes too.
+  const forget = () => { db.exec(`DELETE FROM usage_inventory WHERE project_id='${project.id}'`); forgetUsageInventoryReports(); };
   const first = await session("first");
 
   scheduleUsageIngest(project, [first], []);
@@ -81,4 +82,22 @@ test("an unchanged listing does not re-walk a project's transcripts until its in
   scheduleUsageIngest(project, [first, { ...second, title: "Renamed" }], []);
   await usageIngestIdle();
   assert.deepEqual(catalogued(), ["first", "second"], "after the interval the same listing is walked again");
+});
+
+test("a session reported again unchanged asks the database nothing; a changed or forced report is written", () => {
+  const row = { projectId: "kept-report-project", conversationId: "c1", sessionId: "s1", engine: "pi", title: "One", classification: null, usageStatus: "reported" };
+  const titles = () => (db.prepare("SELECT title FROM usage_inventory WHERE project_id=?").all(row.projectId) as Array<{ title: string }>).map((entry) => entry.title);
+  const remove = () => db.exec(`DELETE FROM usage_inventory WHERE project_id='${row.projectId}'`);
+  try {
+    upsertUsageInventory(row);
+    assert.deepEqual(titles(), ["One"]);
+    remove();
+    upsertUsageInventory({ ...row });
+    assert.deepEqual(titles(), [], "the same report is not sent to the database again");
+    upsertUsageInventory({ ...row, title: "Two" });
+    assert.deepEqual(titles(), ["Two"], "a changed one is");
+    remove();
+    upsertUsageInventory({ ...row, title: "Two" }, true);
+    assert.deepEqual(titles(), ["Two"], "and so is a forced one");
+  } finally { remove(); forgetUsageInventoryReports(); clearUsageTotalsCache(); }
 });

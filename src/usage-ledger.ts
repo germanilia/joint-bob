@@ -562,8 +562,20 @@ export function usageInventoryCoverage(projectIds?: string[]): { projects: numbe
   const row = db.prepare(`SELECT COUNT(DISTINCT ${canonicalProject(db, "i")}) projects,COUNT(*) sessions,SUM(usage_status IN ('missing','unavailable')) missing FROM usage_inventory i${condition}`).get(...(projectIds ?? [])) as Record<string, number>;
   return { projects: Number(row.projects), sessions: Number(row.sessions), missing: Number(row.missing ?? 0) };
 }
-export function upsertUsageInventory(value: { projectId: string; conversationId: string; sessionId: string; engine: string; title: string; classification: string | null; usageStatus: string }): void {
+const inventoryStored = new WeakMap<object, Map<string, string>>();
+/** Forgets what was stored, for code that changes the catalogue's rows itself. */
+export function forgetUsageInventoryReports(): void { inventoryStored.delete(usageDatabase()); }
+export function upsertUsageInventory(value: { projectId: string; conversationId: string; sessionId: string; engine: string; title: string; classification: string | null; usageStatus: string }, always = false): void {
   const db = usageDatabase();
+  // Each import of a project reports every session again, two statements apiece. What this
+  // process last stored for a session is remembered, and the same report asks the database nothing.
+  let stored = inventoryStored.get(db);
+  if (!stored || stored.size > 100_000) inventoryStored.set(db, stored = new Map());
+  const key = `${value.projectId}\n${value.engine}\n${value.sessionId}`;
+  const signature = JSON.stringify([value.conversationId, value.title, value.classification, value.usageStatus]);
+  // A refresh a person asked for writes every row again.
+  if (!always && stored.get(key) === signature) return;
+  stored.set(key, signature);
   const previous = db.prepare("SELECT conversation_id conversationId FROM usage_inventory WHERE project_id=? AND engine=? AND session_id=?")
     .get(value.projectId, value.engine, value.sessionId) as { conversationId: string } | undefined;
   // Every listing re-reports every session; an unchanged row must not rewrite the database.

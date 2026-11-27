@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.344.11 — 2026-11-27
+
+- **Performance:** Opening a conversation list no longer rewrites its project's "last used" time on every request. Each rewrite re-sent the project's details to every other machine and discarded the server's cached lookups. The project already first in the list is left alone, and another moves up at most once a minute.
+- **Performance:** A changed Claude transcript is matched against a project's folders once per project instead of resolving every folder again for each file change, which was slow for a project with many worktrees.
+- **Performance:** The usage catalog no longer queries the database for every conversation on each import when nothing about it changed. A manual usage refresh still rewrites every entry.
+
 ## 2.344.10 — 2026-11-27
 
 - **Error reports:** A peer that loses its relay connection while downloading a conversation transcript no longer sends an error report. The download resumes on the next sync, and the server logs a warning instead.

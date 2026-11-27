@@ -22,10 +22,19 @@ function nativePath(session: SessionSummary): string | null {
   return path.resolve(session.path.replace(/^(pi|claude):/, ""));
 }
 
-function parentFor(session: SessionSummary, sessions: SessionSummary[]): SessionSummary | undefined {
+/** Where the first session with each path and each file name is listed, so a side run finds its parent without comparing every session's name again. */
+function parentIndex(sessions: SessionSummary[]): Map<string, number> {
+  const index = new Map<string, number>();
+  sessions.forEach((candidate, position) => {
+    for (const key of [`path\n${candidate.path}`, `name\n${path.basename(candidate.path)}`]) if (!index.has(key)) index.set(key, position);
+  });
+  return index;
+}
+function parentFor(session: SessionSummary, sessions: SessionSummary[], index: Map<string, number>): SessionSummary | undefined {
   if (!session.readOnly || !session.parentSessionPath) return undefined;
-  const name = path.basename(session.parentSessionPath);
-  return sessions.find((candidate) => candidate.path === session.parentSessionPath || path.basename(candidate.path) === name);
+  // The earliest match in the listing, as a scan from its start would find.
+  const found = [index.get(`path\n${session.parentSessionPath}`), index.get(`name\n${path.basename(session.parentSessionPath)}`)].filter((position): position is number => position !== undefined);
+  return found.length ? sessions[Math.min(...found)] : undefined;
 }
 
 async function importSession(project: ProjectRecord, session: SessionSummary, conversationId: string, origin: string): Promise<string> {
@@ -79,8 +88,9 @@ export async function ingestUsageSessions(project: ProjectRecord, sessions: Sess
   const lineage = new Map(records.map((record) => [`${record.engine}:${record.sessionId}`, record.conversationId ?? record.sessionId]));
   const origin = (await getClusterNode()).id;
   const ordered = [...sessions].sort((a, b) => (a.createdAt ?? project.createdAt).localeCompare(b.createdAt ?? project.createdAt));
+  const parents = parentIndex(sessions);
   await mapWithConcurrency(ordered, concurrency, async (session) => {
-    const parent = parentFor(session, sessions);
+    const parent = parentFor(session, sessions, parents);
     const conversationId = parent
       ? lineage.get(`${parent.harnessId}:${parent.id}`) ?? parent.conversationId ?? parent.id
       : lineage.get(`${session.harnessId}:${session.id}`) ?? session.conversationId ?? session.id;
@@ -88,7 +98,7 @@ export async function ingestUsageSessions(project: ProjectRecord, sessions: Sess
     upsertUsageInventory({
       projectId: project.id, conversationId, sessionId: session.id, engine: session.harnessId,
       title: parent?.title ?? session.title, classification: parent?.classification ?? session.classification ?? null, usageStatus: status,
-    });
+    }, forcedRefreshes > 0);
     await new Promise((resolve) => setImmediate(resolve));
   });
 }

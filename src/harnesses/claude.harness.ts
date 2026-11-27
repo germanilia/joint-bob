@@ -19,6 +19,20 @@ function projectDir(cwd: string): string { return path.join(claudeProjectsRoot()
 function projectDirs(project: import("../session-paths.js").SessionProjectPaths): string[] {
   return [...new Set(projectCwds(project).flatMap((cwd) => [cwd, path.dirname(cwd)]).map(projectDir))];
 }
+/* The watcher asks for every changed transcript file and every project watching its folder. A
+   project with 170 worktrees has 340 folders, each resolved again for every file event. They are
+   worked out once per project description and again when one of its fields is replaced. */
+type ProjectPaths = import("../session-paths.js").SessionProjectPaths;
+const keptBelongDirs = new WeakMap<object, { root: string; from: unknown[]; dirs: string[] }>();
+function belongDirs(project: ProjectPaths): string[] {
+  const root = claudeProjectsRoot();
+  const from = [project.path, project.macPath, project.locations, project.additionalPaths];
+  const kept = keptBelongDirs.get(project);
+  if (kept?.root === root && kept.from.every((value, index) => value === from[index])) return kept.dirs;
+  const dirs = projectDirs(project).map((dir) => `${path.resolve(dir)}${path.sep}`);
+  keptBelongDirs.set(project, { root, from, dirs });
+  return dirs;
+}
 function watchDirs(project: import("../session-paths.js").SessionProjectPaths): string[] {
   return [...new Set([claudeProjectsRoot(), ...projectDirs(project)])];
 }
@@ -61,7 +75,10 @@ export default defineHarness({
   sync: {
     transcriptRoot: claudeProjectsRoot,
     watchDirs,
-    transcriptBelongs: (project, filePath) => projectDirs(project).some((dir) => isWithin(filePath, dir)),
+    transcriptBelongs: (project, filePath) => {
+      const file = path.resolve(filePath);
+      return belongDirs(project).some((dir) => file.startsWith(dir) || `${file}${path.sep}` === dir);
+    },
     // Claude files tool results under the user role; a queued prompt is a person's too.
     sentByPerson: (entry) => {
       if (entry.type === "queue-operation") return true;
