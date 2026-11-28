@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.16 — 2026-11-28
+
+- **Connection:** Background bookkeeping writes (read watermarks, recents, push-subscription refreshes, worktree cleanup, and open-timing telemetry) no longer raise or pin the "No connection to Joint Bob. Check that any recent change was saved." notice on brief network blips; they still log to **Settings → Logs** and alert on HTTP errors. WebSocket activity now clears read-only disconnect notices, and explicit write notices update their wording once reconnected.
+
 ## 2.346.15 — 2026-11-27
 
 - **Subscription pools:** A Pi member whose provider account has run out of credit, such as z.ai's "429: Insufficient balance or no resource package", now hands the turn to the pool's next member instead of failing it. A Pi provider that rejects the member's sign-in (401 or 403) does the same. Before, the provider's status was lost on the way to the pool, so it treated these as ordinary errors and stopped.
