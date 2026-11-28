@@ -45,7 +45,7 @@ export async function loadRecentSessions() {
 }
 
 function saveRecentSessionInBackground(entry) {
-  api("/api/recents", { method: "PUT", body: JSON.stringify(entry) })
+  api("/api/recents", { method: "PUT", body: JSON.stringify(entry), background: true })
     .catch((error) => console.warn("Could not save recent conversation", error));
 }
 

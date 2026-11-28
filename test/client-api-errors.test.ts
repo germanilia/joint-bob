@@ -12,7 +12,7 @@ function client(fetch: (...args: any[]) => any, duringWait?: () => void) {
   const window = new EventTarget();
   window.addEventListener("joint-bob-client-error", (event) => alerts.push((event as CustomEvent).detail));
   let signedOut = false;
-  const requests = runInNewContext(`${source}\n({ api, apiBlob, apiLines })`, {
+  const requests = runInNewContext(`${source}\n({ api, apiBlob, apiLines, savePreferencesInBackground })`, {
     fetch, Error, TypeError, window, CustomEvent, Event, clearTimeout,
     setTimeout: (done: () => void, ms: number) => {
       waits.push(ms);
@@ -198,6 +198,26 @@ test("a write that gets no answer is never sent again", async () => {
   assert.equal(calls, 1);
 });
 
+test("a dropped background write logs locally without raising a notice, while HTTP errors still alert", async () => {
+  const dropped = client(async () => { throw new TypeError("Failed to fetch"); });
+  await assert.rejects(dropped.api("/api/preferences", { method: "PUT", background: true }), /No response was received/);
+  assert.equal(dropped.logs.length, 1);
+  assert.deepEqual(dropped.alerts, []);
+
+  dropped.savePreferencesInBackground({ activeProjectId: "p1" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(dropped.alerts.length, 0);
+
+  const aborted = client(async () => { throw new DOMException("This operation was aborted", "AbortError"); });
+  await assert.rejects(aborted.api("/api/recents", { method: "PUT", background: true }), /interrupted/i);
+  assert.equal(aborted.logs.length, 1);
+  assert.deepEqual(aborted.alerts, []);
+
+  const serverError = client(async () => Response.json({ error: "Disk full" }, { status: 500 }));
+  await assert.rejects(serverError.api("/api/preferences", { method: "PUT", background: true }), /Disk full/);
+  assert.equal(serverError.alerts.length, 1);
+});
+
 test("cancelling while a retry is waiting stays quiet", async () => {
   const controller = new AbortController();
   const request = client(async (_path: string, init: RequestInit) => {
@@ -244,4 +264,96 @@ test("authentication handling and successful responses remain unchanged", async 
   await lines.apiLines("/api/story", {}, (line: unknown) => received.push(line));
   assert.equal(JSON.stringify(received), '[{"type":"progress"},{"type":"done"}]');
   assert.deepEqual([...json.logs, ...empty.logs, ...binary.logs, ...lines.logs], []);
+});
+
+test("disconnect notice ignores dropped background writes, clears reads on server answer, and updates wording on write reconnect", async () => {
+  class StubElement extends EventTarget {
+    className = "";
+    dataset: Record<string, string> = {};
+    textContent = "";
+    children: StubElement[] = [];
+    parentElement: StubElement | null = null;
+    classList = {
+      classes: new Set<string>(),
+      add: (name: string) => this.classList.classes.add(name),
+      contains: (name: string) => this.classList.classes.has(name),
+      toggle: (name: string, force?: boolean) => (force ? this.classList.classes.add(name) : this.classList.classes.delete(name)),
+    };
+    get childElementCount() { return this.children.length; }
+    get isConnected() { return this.parentElement !== null; }
+    setAttribute() {}
+    append(...nodes: StubElement[]) {
+      for (const node of nodes) {
+        if (node.parentElement) node.remove();
+        node.parentElement = this;
+        this.children.push(node);
+      }
+    }
+    remove() {
+      if (!this.parentElement) return;
+      this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+      this.parentElement = null;
+    }
+    querySelector(selector: string): StubElement | null {
+      const want = selector.startsWith(".") ? selector.slice(1) : null;
+      for (const child of this.children) {
+        if (want && child.className.split(/\s+/).includes(want)) return child;
+        const found = child.querySelector(selector);
+        if (found) return found;
+      }
+      return null;
+    }
+  }
+
+  const window = new EventTarget();
+  const body = new StubElement();
+  const document = Object.assign(new EventTarget(), {
+    body,
+    documentElement: new StubElement(),
+    createElement: () => new StubElement(),
+  });
+  const elements = new Proxy({}, { get: () => new StubElement() });
+  const apiSource = (await readFile("public/app/api.js", "utf8")).replace(/^import .*;\n/gm, "").replace(/^export /gm, "");
+  const shellSource = (await readFile("public/app/shell.js", "utf8")).replace(/^import .*;\n/gm, "").replace(/^export /gm, "");
+  let failNetwork = true;
+  const apiMod = runInNewContext(`${apiSource}\n({ api, NO_RESPONSE, UNCERTAIN_WRITE, savePreferencesInBackground })`, {
+    fetch: async () => {
+      if (failNetwork) throw new TypeError("Failed to fetch");
+      return Response.json({ ok: true });
+    },
+    Error, TypeError, window, CustomEvent, Event, clearTimeout,
+    setTimeout: (done: () => void) => setTimeout(done, 0),
+    console: { warn: () => {} },
+    state: { csrfToken: "synthetic-csrf" }, showSignedOut: () => {}, recordFailure: () => {}, TextDecoderStream,
+  });
+  runInNewContext(`${shellSource}\n({ toast })`, {
+    ...apiMod, window, document, elements, CustomEvent, Event,
+    MutationObserver: class { observe() {} },
+    getComputedStyle: () => ({ animationName: "none" }),
+    setTimeout: () => 0, clearTimeout: () => {},
+    topmostOpenDialog: () => null,
+    state: {}, sendSocket: () => {}, copyErrorReport: async () => {}, downloadErrorReport: () => {},
+    reportClientError: async () => null, openSettings: async () => {},
+  });
+
+  const toasts = () => body.children[0]?.children.map((node) => node.querySelector(".toast-message")?.textContent) ?? [];
+
+  await assert.rejects(apiMod.api("/api/preferences", { method: "PUT", background: true }), /No response was received/);
+  assert.deepEqual(toasts(), [], "dropped background write must not open a disconnect notice");
+
+  await assert.rejects(apiMod.api("/api/projects"), /No response was received/);
+  assert.deepEqual(toasts(), ["No connection to Joint Bob. Check that any recent change was saved."]);
+
+  window.dispatchEvent(new Event("joint-bob-server-answered"));
+  assert.deepEqual(toasts(), [], "server answer clears read-only disconnect notice");
+
+  await assert.rejects(apiMod.api("/api/preferences", { method: "PUT" }), /No response was received/);
+  assert.deepEqual(toasts(), ["No connection to Joint Bob. Check that any recent change was saved."]);
+
+  failNetwork = false;
+  await apiMod.api("/api/preferences");
+  assert.deepEqual(toasts(), ["Connection to Joint Bob was briefly lost. Check that your recent change was saved."]);
+
+  const socketSource = await readFile("public/app/socket.js", "utf8");
+  assert.equal((socketSource.match(/joint-bob-server-answered/g) ?? []).length, 4, "conversation and watch sockets both report server answers on open and message");
 });
