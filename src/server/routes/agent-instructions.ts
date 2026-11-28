@@ -112,6 +112,9 @@ for (const method of ["get", "put"] as const) {
         url.searchParams.set("projectId", request.params.projectId);
         for (const [key, value] of Object.entries(location)) url.searchParams.set(key, value);
         const routed = await runtimeFetch(url, { method: method.toUpperCase(), headers: update ? { "Content-Type": "application/json" } : {}, ...(update ? { body: JSON.stringify(update) } : {}), signal: AbortSignal.timeout(30_000) });
+        // A starting peer asks to be retried; the page only retries a 503 that carries Retry-After.
+        const retryAfter = routed.headers.get("retry-after");
+        if (retryAfter) response.set("Retry-After", retryAfter);
         response.status(routed.status).type(routed.headers.get("content-type") ?? "application/json").send(await routed.text());
         return;
       }
