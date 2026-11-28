@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.346.17 — 2026-11-28
+
+- **Instructions:** Opening a project's AGENTS.md for a conversation that runs on another machine while that machine is restarting now waits and tries again, as other pages already do, instead of showing "This node is starting". Before, the machine's request to try again was dropped on the way to the page.
+
 ## 2.346.16 — 2026-11-28
 
 - **Connection:** Background bookkeeping writes (read watermarks, recents, push-subscription refreshes, worktree cleanup, and open-timing telemetry) no longer raise or pin the "No connection to Joint Bob. Check that any recent change was saved." notice on brief network blips; they still log to **Settings → Logs** and alert on HTTP errors. WebSocket activity now clears read-only disconnect notices, and explicit write notices update their wording once reconnected.

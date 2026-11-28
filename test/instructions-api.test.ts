@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -27,6 +28,17 @@ test("read and save project instructions on a paired execution node", { timeout:
   const saved = await api(local, session, "PUT", url, { content: "UPDATED REMOTE RULES", version: read.body.version });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
   assert.equal(await readFile(file, "utf8"), "UPDATED REMOTE RULES");
+
+  // A restarting execution node asks to be retried; the page retries only when Retry-After reaches it.
+  await stopDevNode(servers[0]);
+  const starting = createServer((_request, response) => {
+    response.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" }).end(JSON.stringify({ error: "This node is starting" }));
+  });
+  t.after(() => new Promise<void>((resolve) => starting.close(() => resolve())));
+  await new Promise<void>((resolve) => starting.listen(remote.port, "127.0.0.1", resolve));
+  const response = await fetch(`${local.url}/api${url}`, { headers: { Cookie: session.cookie } });
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("retry-after"), "5");
 });
 
 function cookie(response: Response): string {
