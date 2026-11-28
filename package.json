@@ -63,8 +63,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.327",
-    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@anthropic-ai/claude-code": "2.1.330",
+    "@earendil-works/pi-coding-agent": "1.6.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "codemirror": "5.65.16",
     "express": "^4.22.3",
