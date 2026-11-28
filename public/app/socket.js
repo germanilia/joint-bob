@@ -308,6 +308,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
 
   socket.addEventListener("open", () => {
     if (state.socket !== socket) return;
+    window.dispatchEvent(new Event("joint-bob-server-answered"));
     setStatus("Connected", true);
     setConnecting(false);
     startHeartbeat();
@@ -343,6 +344,7 @@ export function openSession(sessionPath, title = "New conversation", preserveCha
   socket.addEventListener("error", () => console.warn("WebSocket connection failed"));
   socket.addEventListener("message", (event) => {
     if (state.socket !== socket) return;
+    window.dispatchEvent(new Event("joint-bob-server-answered"));
     const payload = JSON.parse(event.data);
     if (payload.type === "ready") refusedCloses = 0;
     handleSocketPayload(payload, !preserveChat);
@@ -498,7 +500,7 @@ export function handleSocketPayload(payload, scrollOnReady = false) {
       state.pendingWorktreeSessions.delete(pendingWorktreeSessionId);
       for (const prompt of pendingWorktree.prompts) sendSocket(prompt);
     }
-    subscribeToPush().catch((error) => console.warn("Push subscription failed", error));
+    subscribeToPush({ background: true }).catch((error) => console.warn("Push subscription failed", error));
     refreshSessionsQuietly();
     return;
   }
@@ -961,6 +963,7 @@ export function ensureWatchSocket() {
   state.watchProjectId = state.activeProjectId;
   socket.addEventListener("open", () => {
     if (state.watchSocket !== socket) return;
+    window.dispatchEvent(new Event("joint-bob-server-answered"));
     elements.chatsLiveDot.hidden = false;
     document.dispatchEvent(new Event("takeback-watch-connected"));
     // Invalidations have no replay log. Every new subscription needs a snapshot,
@@ -976,7 +979,9 @@ export function ensureWatchSocket() {
     }, 25000);
   });
   socket.addEventListener("message", (event) => {
-    if (state.watchSocket === socket) handleInvalidation(JSON.parse(event.data));
+    if (state.watchSocket !== socket) return;
+    window.dispatchEvent(new Event("joint-bob-server-answered"));
+    handleInvalidation(JSON.parse(event.data));
   });
   socket.addEventListener("close", () => {
     if (state.watchSocket !== socket) return;

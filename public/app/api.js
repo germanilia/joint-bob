@@ -35,10 +35,14 @@ function requestFailure(error, path, options, status) {
   // Most callers catch and toast only the message, so record diagnostics here.
   // Never log request headers, bodies or query values.
   // `quietStatuses` are outcomes the caller handles itself: no toast and no error report.
+  // `background` marks best-effort housekeeping (read watermarks, recents, telemetry): a dropped
+  // connection still logs locally, but does not pin the disconnect / unsaved-change banner.
   if (!cancelled && !options.quietStatuses?.includes(status)) {
     recordFailure({ method, path: requestPath, status, name: cause.name, message: cause.message, reason, details: cause.details, cancelled, uncertainWrite });
     console.warn("API request failed", { method, path: requestPath, status, name: cause.name, message: reason });
-    window.dispatchEvent(new CustomEvent("joint-bob-client-error", { detail: { kind: "toast", message } }));
+    if (!(options.background && status === 0)) {
+      window.dispatchEvent(new CustomEvent("joint-bob-client-error", { detail: { kind: "toast", message } }));
+    }
   }
   return failure;
 }
@@ -122,8 +126,8 @@ export async function apiLines(path, options, onLine) {
   });
 }
 
-export async function savePreferences(partial) {
-  return api("/api/preferences", { method: "PUT", body: JSON.stringify(partial) });
+export async function savePreferences(partial, options = {}) {
+  return api("/api/preferences", { ...options, method: "PUT", body: JSON.stringify(partial) });
 }
 
 let pinsReadVersion = 0;
@@ -194,5 +198,5 @@ export function savePin(target, pinned) {
 }
 
 export function savePreferencesInBackground(partial) {
-  void savePreferences(partial).catch((error) => console.warn("Could not save preferences", error));
+  void savePreferences(partial, { background: true }).catch((error) => console.warn("Could not save preferences", error));
 }

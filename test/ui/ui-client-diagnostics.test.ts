@@ -214,7 +214,11 @@ test("a lost connection shows one notice, sends no error report and clears on re
       api("/api/" + name + "?lost=1", { method: "${method}" }).catch((error) => toast.error("Failed to load " + name + ": " + error.message))));
   })()`);
   const notice = page.locator(".toast").filter({ hasText: "No connection to Joint Bob" });
+  const reconnectedNotice = page.locator(".toast").filter({ hasText: "Connection to Joint Bob was briefly lost" });
   const reconnect = () => page.evaluate(`import("/app/api.js").then(({ api }) => api("/api/preferences"))`);
+
+  await page.evaluate(`import("/app/api.js").then(({ api }) => api("/api/preferences?lost=1", { method: "PUT", background: true }).catch(() => {}))`);
+  assert.equal(await notice.count(), 0, "a dropped background write must not show a disconnect notice");
 
   await fail("GET");
   assert.equal(await notice.count(), 1);
@@ -223,7 +227,9 @@ test("a lost connection shows one notice, sends no error report and clears on re
   await notice.waitFor({ state: "detached" });
 
   await fail("PUT");
+  assert.equal(await notice.count(), 1);
   await reconnect();
-  assert.equal(await notice.count(), 1, "a change that may be lost stays visible after reconnecting");
+  assert.equal(await notice.count(), 0, "reconnecting updates the notice so it no longer claims no connection");
+  assert.equal(await reconnectedNotice.count(), 1, "a change that may be lost stays visible after reconnecting");
   assert.deepEqual(reports.filter((report) => report.includes("lost") || report.includes("No response")), []);
 });

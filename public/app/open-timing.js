@@ -37,5 +37,5 @@ export function finishOpenTiming(ready) {
     source: done.source, list: done.list, owner: done.owner,
     shownMs: done.shownMs ?? readyMs, connectingMs: done.connectingMs ?? readyMs, readyMs,
   };
-  void api("/api/performance/conversation-open", { method: "POST", body: JSON.stringify(body) }).catch(() => undefined);
+  void api("/api/performance/conversation-open", { method: "POST", body: JSON.stringify(body), background: true }).catch(() => undefined);
 }

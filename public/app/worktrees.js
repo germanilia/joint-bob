@@ -60,7 +60,7 @@ function cleanupFinishedWorktrees(projectId) {
   // on each notice, or pile up requests while a scan is already running.
   if (Date.now() < (cleanupAfter.get(projectId) || 0)) return;
   cleanupAfter.set(projectId, Infinity);
-  void api(worktreesUrl(projectId, "/cleanup"), { method: "POST", body: "{}" })
+  void api(worktreesUrl(projectId, "/cleanup"), { method: "POST", body: "{}", background: true })
     .then(async ({ deletedWorktreeIds, retainedWorktrees }) => {
       if (state.activeProjectId !== projectId) return;
       state.worktreeCleanupReasons = retainedWorktrees;

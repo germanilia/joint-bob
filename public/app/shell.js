@@ -154,6 +154,7 @@ export function toast(message, duration = 3200, severity = "info", action) {
 
 // A lost connection fails every request at once, so it gets one notice and no error report.
 const CONNECTION_NOTICE = "No connection to Joint Bob. Check that any recent change was saved.";
+const RECONNECTED_CHANGE_NOTICE = "Connection to Joint Bob was briefly lost. Check that your recent change was saved.";
 let connectionNotice = null;
 let changeAtRisk = false;
 
@@ -164,9 +165,12 @@ function connectionLost(change) {
   return connectionNotice;
 }
 
-// Reconnecting clears the notice. One that covers a possibly unsaved change waits to be dismissed.
+// Reconnecting clears a read-only notice. One that covers a possibly unsaved change stays until
+// dismissed, updated so it no longer claims Joint Bob is still disconnected.
 window.addEventListener("joint-bob-server-answered", () => {
-  if (connectionNotice && !changeAtRisk) dismissToast(connectionNotice);
+  if (!connectionNotice) return;
+  if (!changeAtRisk) dismissToast(connectionNotice);
+  else if (connectionNotice.isConnected) connectionNotice.querySelector(".toast-message").textContent = RECONNECTED_CHANGE_NOTICE;
   connectionNotice = null;
   changeAtRisk = false;
 });
@@ -266,16 +270,17 @@ export async function enableNotifications() {
 
 // Conversations enter review in every project, not only the open one, so a device subscribes once
 // for all of them and stays subscribed before any project is selected.
-export async function subscribeToPush() {
+export async function subscribeToPush({ background = false } = {}) {
   if (!state.notificationsEnabled || !notificationPermissionGranted()) return;
   const registration = await navigator.serviceWorker.ready;
   const existing = await registration.pushManager.getSubscription();
   const subscription = existing || await registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: base64UrlToUint8Array((await api("/api/push/vapid-public-key")).publicKey),
+    applicationServerKey: base64UrlToUint8Array((await api("/api/push/vapid-public-key", { background })).publicKey),
   });
   await api("/api/push/subscribe", {
     method: "POST",
+    background,
     body: JSON.stringify({
       subscription: subscription.toJSON(),
       projectId: "*",
@@ -299,7 +304,7 @@ async function disableNotifications() {
 }
 
 export async function maybeNotifyTurnComplete() {
-  if (state.notificationsEnabled) await subscribeToPush();
+  if (state.notificationsEnabled) await subscribeToPush({ background: true });
 }
 
 export async function playCompletionSound(sound = state.completionSound) {

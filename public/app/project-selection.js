@@ -225,6 +225,6 @@ async function chooseProject(projectId, shouldRender, preserveSession) {
     renderMs: Math.round(ready - renderStarted), conversations: body.sessions.length, keptListShown: Boolean(kept),
   });
   ensureWatchSocket();
-  subscribeToPush().catch((error) => console.warn("Push subscription failed", error));
+  subscribeToPush({ background: true }).catch((error) => console.warn("Push subscription failed", error));
   loadWorktrees().catch((error) => console.warn(error));
 }
